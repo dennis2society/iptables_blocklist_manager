@@ -171,6 +171,36 @@ function prefixToCidr(string $ip, int $prefix): string {
     return inet_ntop(pack('C*', ...$bytes)) . '/' . $prefix;
 }
 
+function cidrToRange(string $cidr): array {
+    if ($cidr === '') return ['', ''];
+    $parts = explode('/', $cidr, 2);
+    if (count($parts) !== 2) return ['', ''];
+    [$ip, $pfxStr] = $parts;
+    $prefix = (int)$pfxStr;
+    $packed = inet_pton($ip);
+    if ($packed === false) return ['', ''];
+    $len   = strlen($packed);
+    $bytes = array_values(unpack('C*', $packed));
+    // Start: mask off host bits
+    $start = $bytes;
+    for ($i = 0; $i < $len; $i++) {
+        $bits = max(0, min(8, $prefix - $i * 8));
+        $mask = $bits >= 8 ? 0xff : ($bits > 0 ? (0xff << (8 - $bits)) & 0xff : 0);
+        $start[$i] &= $mask;
+    }
+    // End: OR in host bits
+    $end = $start;
+    for ($i = 0; $i < $len; $i++) {
+        $bits = max(0, min(8, $prefix - $i * 8));
+        $mask = $bits >= 8 ? 0xff : ($bits > 0 ? (0xff << (8 - $bits)) & 0xff : 0);
+        $end[$i] |= (~$mask & 0xff);
+    }
+    return [
+        inet_ntop(pack('C*', ...$start)) ?: '',
+        inet_ntop(pack('C*', ...$end))   ?: '',
+    ];
+}
+
 // ─── Database lookups ─────────────────────────────────────────────────────────
 
 function getAvailableSources(string $dataDir, array $mmdbConfig, array $sessionServiceEnabled = []): array {
@@ -277,6 +307,8 @@ $ips       = [];
 $counts    = [];
 $results   = [];
 $isPost    = ($_SERVER['REQUEST_METHOD'] === 'POST');
+$isRestore = (!$isPost && isset($_GET['restore']) && !empty($_SESSION['last_input_text'] ?? ''));
+$isIpLookup = (!$isPost && !$isRestore && isset($_GET['ip']));
 $sessionServiceEnabled = $_SESSION['service_enabled'] ?? [];
 $availableSources = getAvailableSources($DATA_DIR, $MMDB_CONFIG, $sessionServiceEnabled);
 $hasDatabases = count($availableSources) > 0;
@@ -296,6 +328,24 @@ if ($isPost) {
             $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
         }
     }
+} elseif ($isRestore) {
+    $inputText = $_SESSION['last_input_text'];
+    [$ips, $counts] = extractIPs($inputText);
+    if ($ips && $hasDatabases) {
+        $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
+    }
+} elseif ($isIpLookup) {
+    // Accept a single IP or CIDR network address passed via ?ip=
+    $rawIp = substr($_GET['ip'], 0, 64);
+    // Allow only characters valid in an IP address or CIDR
+    $inputText = preg_replace('#[^0-9a-fA-F.:/]#', '', $rawIp);
+    if ($inputText !== '') {
+        $_SESSION['last_input_text'] = $inputText;
+        [$ips, $counts] = extractIPs($inputText);
+        if ($ips && $hasDatabases) {
+            $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -308,6 +358,7 @@ if ($isPost) {
 </head>
 <body>
 <h1>IP Lookup</h1>
+<p><a href="country_asn_lookup.php">Country ASN Lookup →</a></p>
 
 <form method="post">
     <div class="form-row">
@@ -357,7 +408,7 @@ if ($isPost) {
     </div>
 </div>
 
-<?php if ($isPost): ?>
+<?php if ($isPost || $isRestore || $isIpLookup): ?>
 <?php if (!$hasDatabases): ?>
     <p class="error-msg">Error: No GeoIP databases found. Please upload the .mmdb files (GeoLite2-Country.mmdb, GeoLite2-ASN.mmdb, ip-to-country.mmdb, ip-to-asn.mmdb, ipinfo_lite.mmdb) to the application directory.</p>
 <?php elseif (empty($ips)): ?>
@@ -366,6 +417,7 @@ if ($isPost) {
     <div class="table-controls">
         <span class="summary"><?= count($ips) ?> unique IP address<?= count($ips) !== 1 ? 'es' : '' ?> found.</span>
         <button id="sort-reset" type="button">Reset sort</button>
+        <button id="toggle-ranges-btn" type="button">▶ Show IP ranges</button>
         <button id="export-csv-btn" type="button">Export to blocklist CSVs</button>
         <span id="export-msg" class="export-msg"></span>
     </div>
@@ -373,13 +425,14 @@ if ($isPost) {
     <table>
         <thead>
             <tr>
+                <th rowspan="2" class="row-num-col">#</th>
                 <th rowspan="2" class="sortable" data-col="ip">IP Address</th>
                 <th rowspan="2" class="sortable" data-col="count">#</th>
                 <?php foreach ($MMDB_CONFIG as $i => $service):
                     if (!($availableSources[$service['id']] ?? false)) continue;
                     $sep = $i > 0 ? ' src-sep' : '';
                 ?>
-                <th colspan="4"<?= $sep ? ' class="' . $sep . '"' : '' ?>><?= h($service['label']) ?></th>
+                <th colspan="4" data-src-hdr="1"<?= $sep ? ' class="' . $sep . '"' : '' ?>><?= h($service['label']) ?></th>
                 <?php endforeach; ?>
             </tr>
             <tr>
@@ -388,13 +441,14 @@ if ($isPost) {
                     $sep = $i > 0 ? ' src-sep' : '';
                 ?>
                 <th class="sortable<?= $sep ? ' ' . $sep : '' ?>" data-col="<?= h($service['id']) ?>-cidr">Network</th>
+                <th class="range-col">Start IP – End IP</th>
                 <th class="sortable" data-col="<?= h($service['id']) ?>-country">Country</th>
                 <th class="sortable" data-col="<?= h($service['id']) ?>-asn">ASN</th>
                 <th class="sortable" data-col="<?= h($service['id']) ?>-org">Org / ISP</th>
                 <?php endforeach; ?>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="main-tbody">
         <?php foreach ($ips as $idx => $ip):
             $d = $results[$ip];
         ?>
@@ -409,6 +463,7 @@ if ($isPost) {
                 data-<?= h($service['id']) ?>-asn="<?= h($d[$service['id']]['asn']) ?>"
                 data-<?= h($service['id']) ?>-org="<?= h($d[$service['id']]['org']) ?>"
                 <?php endforeach; ?>>
+                <td class="row-num-col row-num"></td>
                 <td class="ip"><code><a href="https://ipinfo.io/<?= h(rawurlencode($ip)) ?>" target="_blank" rel="noopener noreferrer"><?= h($ip) ?></a></code></td>
                 <td class="count-col"><?= !empty($counts[$ip]) ? (int)$counts[$ip] : '' ?></td>
                 <?php $srcOrder = array_keys(array_filter($availableSources)); foreach ($srcOrder as $i => $serviceId):
@@ -423,8 +478,10 @@ if ($isPost) {
                     $sep  = $i > 0 ? ' src-sep' : '';
                 ?>
                 <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"><?= h($s['cidr']) ?></label><?php endif; ?></td>
+                <?php [$rStart, $rEnd] = cidrToRange($s['cidr']); ?>
+                <td class="range-col"><?php if ($rStart !== ''): ?><code><?= h($rStart) ?></code><br><code><?= h($rEnd) ?></code><?php endif; ?></td>
                 <td><?= $disp ?></td>
-                <td class="asn"><?= h($s['asn']) ?></td>
+                <td class="asn"><?php if ($s['asn']): ?><a href="asn_view.php?asn=<?= h(urlencode($s['asn'])) ?>"><?= h($s['asn']) ?></a><?php else: ?><?= h($s['asn']) ?><?php endif; ?></td>
                 <td class="org" title="<?= h($s['org']) ?>"><?= h($s['org']) ?></td>
                 <?php endforeach; ?>
             </tr>
@@ -435,6 +492,13 @@ if ($isPost) {
 <?php endif; ?>
 <?php endif; ?>
 <script>
+// After showing results, rewrite the URL to ?restore=1 so the browser back
+// button returns to a GET page that PHP re-renders from session.
+<?php if ((!empty($ips) && $isPost) || $isRestore || $isIpLookup): ?>
+if (history.replaceState) {
+    history.replaceState(null, '', 'index.php?restore=1');
+}
+<?php endif; ?>
 (function () {
     const table = document.querySelector('table');
     if (!table) return;
@@ -474,6 +538,7 @@ if ($isPost) {
             .sort((ra, rb) => cmp(col, ra.dataset[key] ?? '', rb.dataset[key] ?? '') * activeDir)
             .forEach(r => tbody.appendChild(r));
         updateIndicators();
+        updateRowNums(tbody);
     }
 
     function updateIndicators() {
@@ -494,6 +559,23 @@ if ($isPost) {
             .sort((a, b) => +a.dataset.index - +b.dataset.index)
             .forEach(r => tbody.appendChild(r));
         updateIndicators();
+        updateRowNums(tbody);
+    });
+
+    function updateRowNums(tb) {
+        tb.querySelectorAll('tr').forEach((tr, i) => {
+            const cell = tr.querySelector('.row-num');
+            if (cell) cell.textContent = i + 1;
+        });
+    }
+    updateRowNums(tbody);
+
+    document.getElementById('toggle-ranges-btn')?.addEventListener('click', function () {
+        const showing = table.classList.toggle('show-ranges');
+        this.textContent = showing ? '▼ Hide IP ranges' : '▶ Show IP ranges';
+        table.querySelectorAll('thead tr:first-child th[data-src-hdr]').forEach(th => {
+            th.colSpan = showing ? 5 : 4;
+        });
     });
 })();
 

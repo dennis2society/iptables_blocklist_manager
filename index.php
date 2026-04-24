@@ -321,7 +321,7 @@ if ($isPost) {
             </div>
         </div>
         <div class="form-right">
-            <label for="net-list">Selected Blocklist:</label>
+            <label for="net-list">Selected For Blocklist:</label>
             <textarea id="net-list" readonly placeholder="Check networks in the table below to mark for blocklist"></textarea>
             <div class="form-right-btns">
                 <button type="button" id="clear-list-btn">Clear selected networks</button>

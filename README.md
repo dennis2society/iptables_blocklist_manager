@@ -2,22 +2,23 @@
 
 ![Screenshot](screenshot.jpg)
 
-A PHP web app for generating per-country, per-IP-version CSV blocklists by looking up IPs against local GeoIP databases. 
+This is a PHP web app for generating per-country/ASN, per-IP-version CSV blocklists by 
+looking up IPs against local GeoIP databases. 
 Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 
 ## Features
 
 - Query multiple GeoIP databases per IP
 - Select networks to export by country and IP version (IPv4/IPv6)
-- Generate blocklists as separate CSV files per country code
-- Each CSV includes network, date added, country, ASN, organization, and source database
-- Deduplication: prevents duplicate entries when exporting or re-exporting
-- Locally cached network ranges per ASN list
+- Generate presistent blocklists as separate CSV files per country code or ASN
+- Deduplication: prevents duplicate entries when exporting or updating
+- Locally cached network ranges per ASN list (refresh on demand)
 
-## Disclaimer
+## <span style="color: #d2691e;">Disclaimer</span>
 
-I have not thoroughly tested this for security issues!
-I am running this on a local machine with input I can trust (my own server's Logwatch reports).
+<b>This thing is mostly AI generated</b> but it works well enough for me because 
+I run this locally and am only feeding it input I trust (my own server's 
+Logwatch reports).  Would I trust this to run publicly exposed? No!
 
 <b>Use with care! Better do not expose to public access!</b>
 

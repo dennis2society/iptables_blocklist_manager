@@ -16,7 +16,8 @@ Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 ## Disclaimer
 
 I have not thoroughly tested this for security issues!
-I am only running this on a local machine.
+I am only running this on a local machine with input I can trust (my own server's Logwatch reports).
+
 <b>Use with care! Do not expose to public access!</b>
 
 ## Requirements

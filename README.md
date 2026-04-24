@@ -14,7 +14,7 @@ Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 - Deduplication: prevents duplicate entries when exporting or updating
 - Locally cached network ranges per ASN list (refresh on demand)
 
-## <span style="color: #d2691e;">Disclaimer</span>
+## <span style="color: darkorange;">Disclaimer</span>
 
 <b>This thing is mostly AI generated</b> but it works well enough for me because 
 I run this locally and am only feeding it input I trust (my own server's 

@@ -418,7 +418,7 @@ if ($isPost) {
         <span class="summary"><?= count($ips) ?> unique IP address<?= count($ips) !== 1 ? 'es' : '' ?> found.</span>
         <button id="sort-reset" type="button">Reset sort</button>
         <button id="toggle-ranges-btn" type="button">▶ Show IP ranges</button>
-        <button id="export-csv-btn" type="button">Export to blocklist CSVs</button>
+        <button id="export-csv-btn" type="button" >Create/Update blocklist CSV</button>
         <span id="export-msg" class="export-msg"></span>
     </div>
     <div class="table-wrap">

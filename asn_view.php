@@ -1,9 +1,39 @@
 <?php
 declare(strict_types=1);
 
+session_start();
+
+// Generate CSRF token if not in session
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// Escape CSV formula injection (=, +, @, -)
+function escapeCsvFormula(string $value): string {
+    if (preg_match('/^[=+@-]/', $value)) {
+        return "'" . $value;
+    }
+    return $value;
+}
+
 // ─── Clear-cache action ───────────────────────────────────────────────────────
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_cache'])) {
+    // Validate CSRF token
+    if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+        http_response_code(403);
+        die('CSRF token validation failed');
+    }
+    
+    // Rate limit: max 1 clear per minute per IP
+    $rateLimitFile = __DIR__ . '/cache/.rate_' . md5($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    $lastClear = file_exists($rateLimitFile) ? (int)file_get_contents($rateLimitFile) : 0;
+    if (time() - $lastClear < 60) {
+        http_response_code(429);
+        die('Rate limit: only 1 cache clear per minute allowed');
+    }
+    file_put_contents($rateLimitFile, (string)time(), LOCK_EX);
+    
     $asn = strtoupper(preg_replace('/[^A-Z0-9]/', '', $_POST['clear_cache']));
     if (preg_match('/^AS\d+$/', $asn)) {
         $f = __DIR__ . '/cache/' . $asn . '.json';
@@ -51,7 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
         if (!$fh) continue;
         fputcsv($fh, ['network', 'asn', 'org', 'country_code', 'country', 'added_at']);
         foreach ($rows as $r) {
-            fputcsv($fh, [$r['cidr'], $asn, $org, $r['country_code'], $r['country'], date('Y-m-d H:i:s')]);
+            fputcsv($fh, [
+                escapeCsvFormula($r['cidr']),
+                escapeCsvFormula($asn),
+                escapeCsvFormula($org),
+                escapeCsvFormula($r['country_code']),
+                escapeCsvFormula($r['country']),
+                date('Y-m-d H:i:s')
+            ]);
             $written++;
         }
         fclose($fh);
@@ -92,6 +129,7 @@ $cachedTime = $hasCached ? filemtime($cacheFile) : null;
 <!-- ─── Controls ─────────────────────────────────────────────────────────── -->
 <div class="asn-controls">
     <form method="post" style="display:inline">
+        <input type="hidden" name="csrf_token" value="<?= h($_SESSION['csrf_token']) ?>">
         <input type="hidden" name="clear_cache" value="<?= h($rawAsn) ?>">
         <button type="submit" class="btn-secondary"
                 <?= $hasCached ? '' : 'disabled' ?>

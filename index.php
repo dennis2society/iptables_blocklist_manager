@@ -85,7 +85,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
 
         foreach ($rows as $r) {
             if (isset($existing[$r['cidr']])) { $skipped++; continue; }
-            fputcsv($fh, [$r['cidr'], date('Y-m-d H:i:s'), $r['country'], $r['asn'], $r['comment'], $r['source']]);
+            fputcsv($fh, [
+                escapeCsvFormula($r['cidr']),
+                date('Y-m-d H:i:s'),
+                escapeCsvFormula($r['country']),
+                escapeCsvFormula($r['asn']),
+                escapeCsvFormula($r['comment']),
+                escapeCsvFormula($r['source'])
+            ]);
             $existing[$r['cidr']] = true; // prevent within-batch duplicates
             $written++;
         }
@@ -474,7 +481,8 @@ if ($isPost) {
                     if (!$service) continue;
                     $s    = $d[$service['id']];
                     $flag = countryFlag($s['country_code']);
-                    $disp = $flag ? $flag . '&nbsp;' . h($s['country']) : h($s['country']);
+                    $cc   = $s['country_code'] ? ' [' . h($s['country_code']) . ']' : '';
+                    $disp = $flag ? $flag . '&nbsp;' . h($s['country']) . $cc : h($s['country']) . $cc;
                     $sep  = $i > 0 ? ' src-sep' : '';
                 ?>
                 <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"><?= h($s['cidr']) ?></label><?php endif; ?></td>

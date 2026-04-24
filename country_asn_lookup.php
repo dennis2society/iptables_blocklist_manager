@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 session_start();
 
+// Prevent caching of results to avoid stale country data
+header('Cache-Control: no-cache, no-store, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 if (!extension_loaded('maxminddb')) {
     die('<p style="font-family:monospace;color:red">Error: PHP <code>maxminddb</code> extension not loaded.<br>'
       . 'Uncomment <code>extension=maxminddb.so</code> in <code>/etc/php/conf.d/maxminddb.ini</code> and restart the web server.</p>');
@@ -181,32 +186,41 @@ function scanCountryASNs(string $countryCode, string $dataDir, array $mmdbConfig
     foreach ($mmdbConfig as $service) {
         if (!($availableSources[$service['id']] ?? false)) continue;
         
-        // Get country and ASN database readers
-        $countryDb = null;
-        $asnDb = null;
+        // Collect ALL country and ASN database readers for this service
+        $countryDbs = [];
+        $asnDbs = [];
         
         foreach ($service['databases'] as $db) {
             $path = $dataDir . $db['file'];
             if (!file_exists($path)) continue;
             
-            if (in_array($db['type'], ['maxmind_country', 'iplocate_country', 'ipinfo'])) {
+            if (in_array($db['type'], ['maxmind_country', 'iplocate_country'])) {
                 try {
-                    $countryDb = new \MaxMind\Db\Reader($path);
+                    $countryDbs[] = ['reader' => new \MaxMind\Db\Reader($path), 'type' => $db['type']];
                 } catch (\Exception $e) {
                     continue;
                 }
             }
-            if (in_array($db['type'], ['maxmind_asn', 'iplocate_asn', 'ipinfo'])) {
+            if (in_array($db['type'], ['maxmind_asn', 'iplocate_asn'])) {
                 try {
-                    if ($asnDb) $asnDb->close();
-                    $asnDb = new \MaxMind\Db\Reader($path);
+                    $asnDbs[] = ['reader' => new \MaxMind\Db\Reader($path), 'type' => $db['type']];
+                } catch (\Exception $e) {
+                    continue;
+                }
+            }
+            // ipinfo contains both country and ASN data
+            if ($db['type'] === 'ipinfo') {
+                try {
+                    $reader = new \MaxMind\Db\Reader($path);
+                    $countryDbs[] = ['reader' => $reader, 'type' => 'ipinfo'];
+                    $asnDbs[] = ['reader' => $reader, 'type' => 'ipinfo'];
                 } catch (\Exception $e) {
                     continue;
                 }
             }
         }
         
-        if (!$countryDb || !$asnDb) continue;
+        if (empty($countryDbs) || empty($asnDbs)) continue;
 
         $extractCountry = function($rec, string $serviceId): array {
             switch ($serviceId) {
@@ -243,23 +257,51 @@ function scanCountryASNs(string $countryCode, string $dataDir, array $mmdbConfig
             }
         };
 
-        $processIp = function(string $ip) use (&$asnNetworks, $countryDb, $asnDb, $service, $countryCode, $extractCountry, $extractASN): void {
+        $processIp = function(string $ip) use (&$asnNetworks, $countryDbs, $asnDbs, $service, $countryCode, $extractCountry, $extractASN): void {
             try {
-                [$countryRec] = $countryDb->getWithPrefixLen($ip);
+                // Try all country databases to find country info
+                $countryRec = null;
+                foreach ($countryDbs as $dbInfo) {
+                    try {
+                        [$rec] = $dbInfo['reader']->getWithPrefixLen($ip);
+                        if ($rec) {
+                            $countryRec = $rec;
+                            break; // Use first match
+                        }
+                    } catch (\Exception $e) {
+                        // try next database
+                    }
+                }
+                
                 if (!$countryRec) return;
-
+                
                 [$cc, $countryName] = $extractCountry($countryRec, $service['id']);
                 if ($countryCode !== '' && $cc !== $countryCode) return;
-
-                [$asnRec, $asnPrefix] = $asnDb->getWithPrefixLen($ip);
+                
+                // Try all ASN databases to find ASN info
+                $asnRec = null;
+                $asnPrefix = null;
+                foreach ($asnDbs as $dbInfo) {
+                    try {
+                        [$rec, $prefix] = $dbInfo['reader']->getWithPrefixLen($ip);
+                        if ($rec) {
+                            $asnRec = $rec;
+                            $asnPrefix = $prefix;
+                            break; // Use first match
+                        }
+                    } catch (\Exception $e) {
+                        // try next database
+                    }
+                }
+                
                 if (!$asnRec) return;
-
+                
                 [$asn, $org] = $extractASN($asnRec, $service['id']);
                 if (!$asn) return;
-
+                
                 $cidr = $asnPrefix ? prefixToCidr($ip, $asnPrefix) : '';
                 if (!$cidr) return;
-
+                
                 $key = $asn . '|' . $cidr . '|' . $service['id'];
                 if (!isset($asnNetworks[$key])) {
                     $asnNetworks[$key] = [
@@ -277,11 +319,14 @@ function scanCountryASNs(string $countryCode, string $dataDir, array $mmdbConfig
             }
         };
 
-        // Scan IPv4 space: sample /8 blocks
+        // Scan IPv4 space: sample all /16 blocks with multiple IPs per block
         for ($i = 1; $i <= 255; $i++) {
-            for ($j = 0; $j <= 255; $j += 8) {
-                $processIp("$i.$j.0.1");
+            for ($j = 0; $j <= 255; $j++) {
+                // Sample 4 IPs per /16 block to increase coverage
+                $processIp("$i.$j.1.1");
+                $processIp("$i.$j.64.1");
                 $processIp("$i.$j.128.1");
+                $processIp("$i.$j.192.1");
             }
         }
         
@@ -299,8 +344,18 @@ function scanCountryASNs(string $countryCode, string $dataDir, array $mmdbConfig
             }
         }
         
-        $countryDb->close();
-        $asnDb->close();
+        // Close all database readers
+        foreach ($countryDbs as $dbInfo) {
+            $dbInfo['reader']->close();
+        }
+        foreach ($asnDbs as $dbInfo) {
+            // Skip if already closed (ipinfo shares reader between arrays)
+            if (method_exists($dbInfo['reader'], 'close')) {
+                try {
+                    $dbInfo['reader']->close();
+                } catch (\Exception $e) {}
+            }
+        }
     }
     
     return $asnNetworks;
@@ -334,8 +389,17 @@ function buildUniqueASNs(array $asnNetworks): array {
     return array_values($uniqueASNs);
 }
 
+// Check for form submission first (must come before GET checks)
+if ($isPost && isset($_POST['country_code'])) {
+    $countryFilter = strtoupper(preg_replace('/[^A-Za-z]/', '', $_POST['country_code']));
+    // PRG: redirect to GET so back button works without "document expired"
+    $redirectUrl = 'country_asn_lookup.php?country=' . urlencode($countryFilter);
+    header('Location: ' . $redirectUrl);
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    exit;
+}
 // Check if viewing ASN details (GET parameters)
-if (isset($_GET['asn'])) {
+elseif (isset($_GET['asn'])) {
     $countryFilter = strtoupper(preg_replace('/[^A-Za-z]/', '', $_GET['country'] ?? ''));
     $asnFilter     = strtoupper(preg_replace('/[^A-Z0-9]/', '', $_GET['asn']));
     
@@ -364,13 +428,6 @@ elseif (isset($_GET['country'])) {
         $filteredResults = buildUniqueASNs($asnNetworks);
         $showResults   = true;
     }
-}
-// Main form submission
-elseif ($isPost && isset($_POST['country_code'])) {
-    $countryFilter = strtoupper(preg_replace('/[^A-Za-z]/', '', $_POST['country_code']));
-    // PRG: redirect to GET so back button works without "document expired"
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?country=' . urlencode($countryFilter));
-    exit;
 }
 
 ?>

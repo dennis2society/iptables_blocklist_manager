@@ -30,7 +30,31 @@ if (!preg_match('/^AS\d+$/', $targetAsn)) {
 
 $DATA_DIR    = __DIR__ . '/';
 $MMDB_CONFIG = require __DIR__ . '/mmdb_config.php';
+// ─── MMDB Integrity Verification ──────────────────────────────────────────────
 
+$mmdbHashes = [
+    'GeoLite2-ASN.mmdb' => '96655ee7c57df0bdca68cc7047abf07daf7b9dba04d72a1d6197944d9228203a',
+    'GeoLite2-City.mmdb' => '3b680fc55369da575dadea0d5dd69eb72496c55d2b0de9aee3c24cb96fe2d581',
+    'GeoLite2-Country.mmdb' => '0a9a8b654885301a66cb0dc2f90b84fdfdb1c42e29af4c2b25c67b7153ebb8f9',
+    'ip-to-asn.mmdb' => 'a5eeff87305c8856eaeb86a43641aa4f757f6a4b9081f5c41cf6df8f8afe372f',
+    'ip-to-country.mmdb' => '0607bceef28567cfa59bdabbae403c78de31e72b1e3146d92d1e6fda7cfb5bea',
+    'ipinfo_lite.mmdb' => 'e845372d4ecdae1528d2b7c731a77355486d3d502db5eb97a16c32d457883ec8',
+];
+
+foreach ($MMDB_CONFIG as $service) {
+    foreach ($service['databases'] as $db) {
+        $path = $DATA_DIR . $db['file'];
+        if (!file_exists($path)) continue;
+        
+        if (isset($mmdbHashes[$db['file']])) {
+            $actualHash = hash_file('sha256', $path);
+            if ($actualHash !== $mmdbHashes[$db['file']]) {
+                sse(['type' => 'error', 'msg' => 'MMDB integrity check failed: ' . $db['file'] . ' (tampering detected)']);
+                exit;
+            }
+        }
+    }
+}
 // ─── File cache ───────────────────────────────────────────────────────────────
 
 $cacheDir  = __DIR__ . '/cache';

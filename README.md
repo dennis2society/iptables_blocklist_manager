@@ -13,6 +13,12 @@ Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 - Each CSV includes network, date added, country, ASN, organization, and source database
 - Deduplication: prevents duplicate entries when exporting or re-exporting
 
+## Disclaimer
+
+I have not thoroughly tested this for security issues!
+I am only running this on a local machine.
+<b>Use with care! Do not expose to public access!</b>
+
 ## Requirements
 
 - PHP 8.0+ with `maxminddb` extension

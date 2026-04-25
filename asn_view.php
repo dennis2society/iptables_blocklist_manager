@@ -36,8 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_cache'])) {
     
     $asn = strtoupper(preg_replace('/[^A-Z0-9]/', '', $_POST['clear_cache']));
     if (preg_match('/^AS\d+$/', $asn)) {
-        $f = __DIR__ . '/cache/' . $asn . '.json';
-        if (file_exists($f)) unlink($f);
+        foreach (glob(__DIR__ . '/asn_cache/' . $asn . '_*.csv') ?: [] as $f) {
+            if (file_exists($f)) unlink($f);
+        }
     }
     header('Location: ' . $_SERVER['PHP_SELF'] . '?asn=' . urlencode($asn));
     exit;
@@ -61,7 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
     $networks = json_decode($_POST['networks'] ?? '[]', true);
     if (!is_array($networks)) { echo json_encode(['error' => 'Bad data']); exit; }
 
-    // Group by country_code + ip version → {ASN}_{CC}_{v4/v6}.csv
+    // Remove any existing blocklist files for this ASN before writing new ones
+    foreach (glob($csvDir . '/' . $asn . '_*.csv') ?: [] as $old) {
+        @unlink($old);
+    }
+
+    // Group by ip version only → {ASN}_{v4/v6}.csv
     $groups = [];
     foreach ($networks as $n) {
         $cidr = trim($n['cidr'] ?? '');
@@ -70,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
         $cc      = strtoupper(preg_replace('/[^A-Za-z]/', '', $n['country_code'] ?? ''));
         if (strlen($cc) !== 2) $cc = 'XX';
         $country = trim(preg_replace('/[^\x20-\x7E]/', '', $n['country'] ?? ''));
-        $groups[$cc . '_' . $ver][] = ['cidr' => $cidr, 'country_code' => $cc, 'country' => $country];
+        $groups[$ver][] = ['cidr' => $cidr, 'country_code' => $cc, 'country' => $country];
     }
 
     $written = 0;
@@ -80,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
         $fh   = fopen($file, 'w');
         if (!$fh) continue;
         fputcsv($fh, ['network', 'asn', 'org', 'country_code', 'country', 'added_at']);
+        $berlin = new DateTimeZone('Europe/Berlin');
         foreach ($rows as $r) {
             fputcsv($fh, [
                 escapeCsvFormula($r['cidr']),
@@ -87,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
                 escapeCsvFormula($org),
                 escapeCsvFormula($r['country_code']),
                 escapeCsvFormula($r['country']),
-                date('Y-m-d H:i:s')
+                (new DateTime('now', $berlin))->format('Y-m-d H:i:s')
             ]);
             $written++;
         }
@@ -110,9 +117,40 @@ if (!preg_match('/^AS\d+$/', $rawAsn)) {
     exit;
 }
 
-$cacheFile  = __DIR__ . '/cache/' . $rawAsn . '.json';
-$hasCached  = file_exists($cacheFile);
-$cachedTime = $hasCached ? filemtime($cacheFile) : null;
+$csvFiles   = glob(__DIR__ . '/asn_cache/' . $rawAsn . '_*.csv') ?: [];
+$hasCached  = !empty($csvFiles);
+$cachedTime = $hasCached ? filemtime($csvFiles[0]) : null;
+
+// ─── Load networks from CSV cache ────────────────────────────────────────────
+
+$networks = [];
+$orgName  = '';
+foreach ($csvFiles as $csvFile) {
+    $fh = fopen($csvFile, 'r');
+    if (!$fh) continue;
+    $header = fgetcsv($fh);
+    if (!$header) { fclose($fh); continue; }
+    $cols = array_flip($header);
+    $required = ['network', 'ip_version', 'country', 'country_code', 'asn', 'org', 'source'];
+    foreach ($required as $col) {
+        if (!isset($cols[$col])) { fclose($fh); continue 2; }
+    }
+    while (($row = fgetcsv($fh)) !== false) {
+        $cidr = trim($row[$cols['network']] ?? '');
+        if (!preg_match('#^[0-9a-fA-F:.]+/\d{1,3}$#', $cidr)) continue;
+        $rowOrg = $row[$cols['org']] ?? '';
+        if (!$orgName && $rowOrg) $orgName = $rowOrg;
+        $networks[] = [
+            'cidr'         => $cidr,
+            'ip_version'   => $row[$cols['ip_version']]   ?? '',
+            'country'      => $row[$cols['country']]      ?? '',
+            'country_code' => $row[$cols['country_code']] ?? '',
+            'org'          => $rowOrg,
+            'source'       => $row[$cols['source']]       ?? '',
+        ];
+    }
+    fclose($fh);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -137,17 +175,13 @@ $cachedTime = $hasCached ? filemtime($cacheFile) : null;
             Clear cache<?= $hasCached ? ' (' . date('Y-m-d H:i', $cachedTime) . ')' : '' ?>
         </button>
     </form>
-    <button id="export-btn" class="btn-green" disabled>Write blocklist CSVs</button>
+    <button id="export-btn" class="btn-green" disabled>Export blocklist CSVs (overwrites existing)</button>
     <span id="export-msg" class="export-msg"></span>
 </div>
 
-<!-- ─── Progress bar ─────────────────────────────────────────────────────── -->
-<div id="progress-wrap" class="progress-wrap">
-    <div class="progress-bar-outer">
-        <div id="progress-bar" class="progress-bar-inner" style="width:0%"></div>
-    </div>
-    <div id="progress-label" class="progress-label">Starting scan…</div>
-</div>
+<?php if (!$hasCached): ?>
+<p class="notice-warn">No precomputed data for <?= h($rawAsn) ?>. Run <code>python3 asn_scan.py</code> to generate it.</p>
+<?php endif; ?>
 
 <!-- ─── Result area ──────────────────────────────────────────────────────── -->
 <div id="result-header" style="display:none">
@@ -174,78 +208,35 @@ $cachedTime = $hasCached ? filemtime($cacheFile) : null;
 <script>
 (function () {
     const asn      = <?= json_encode($rawAsn) ?>;
+    const networks = <?= json_encode($networks, JSON_UNESCAPED_UNICODE) ?>;
     const tbody    = document.getElementById('net-tbody');
-    const bar      = document.getElementById('progress-bar');
-    const label    = document.getElementById('progress-label');
-    const wrap     = document.getElementById('progress-wrap');
     const tableWrap= document.getElementById('table-wrap');
     const resHdr   = document.getElementById('result-header');
     const summary  = document.getElementById('result-summary');
     const exportBtn= document.getElementById('export-btn');
     const exportMsg= document.getElementById('export-msg');
 
-    let networks = [];
-    let orgName  = '';
+    let orgName   = <?= json_encode($orgName) ?>;
     let activeCol = null, activeDir = 1;
 
-    // ── SSE ──────────────────────────────────────────────────────────────────
-    const es = new EventSource('asn_scan.php?asn=' + encodeURIComponent(asn));
+    // ── Render rows from embedded data ────────────────────────────────────────
+    networks.forEach(d => appendRow(d));
 
-    es.onmessage = function (e) {
-        const d = JSON.parse(e.data);
-
-        if (d.type === 'progress') {
-            bar.style.width  = d.pct + '%';
-            label.textContent = d.msg + (d.found ? ' — ' + d.found + ' network(s) found' : '');
-
-        } else if (d.type === 'network') {
-            if (d.org && !orgName) orgName = d.org;
-            networks.push(d);
-            appendRow(d);
-
-        } else if (d.type === 'done') {
-            es.close();
-            bar.style.width = '100%';
-            if (d.org && !orgName) orgName = d.org;
-
-            const cached = d.cached ? ' (loaded from cache)' : '';
-            label.textContent = 'Done' + cached + '.';
-
-            resHdr.style.display   = '';
-            tableWrap.style.display = '';
-            const n = d.total;
-            summary.textContent = asn + (orgName ? ' — ' + orgName : '') +
-                ' — ' + n + ' network' + (n !== 1 ? 's' : '') + ' found.';
-
-            if (orgName) {
-                const title = asn + ' — ' + orgName;
-                document.getElementById('page-title').textContent = 'ASN Networks – ' + title;
-                document.title = title;
-            }
-
-            if (n > 0) exportBtn.disabled = false;
-            updateRowNums();
-
-        } else if (d.type === 'error') {
-            es.close();
-            label.textContent = 'Error: ' + d.msg;
-            bar.style.background = '#ef4444';
+    if (networks.length > 0) {
+        resHdr.style.display    = '';
+        tableWrap.style.display = '';
+        const n = networks.length;
+        summary.textContent = asn + (orgName ? ' — ' + orgName : '') +
+            ' — ' + n + ' network' + (n !== 1 ? 's' : '') + ' found.';
+        if (orgName) {
+            const title = asn + ' — ' + orgName;
+            document.getElementById('page-title').textContent = 'ASN Networks – ' + title;
+            document.title = 'ASN Networks – ' + title;
         }
-    };
+        exportBtn.disabled = false;
+        updateRowNums();
+    }
 
-    es.onerror = function () {
-        es.close();
-        if (bar.style.width !== '100%') {
-            label.textContent = 'Connection error.';
-            bar.style.background = '#ef4444';
-        }
-    };
-
-    // When navigating back via bfcache the page is not reloaded but the SSE
-    // connection is dead. Detect this and reload cleanly to reconnect.
-    window.addEventListener('pageshow', function (e) {
-        if (e.persisted) { window.location.reload(); }
-    });
 
     // ── Table row ────────────────────────────────────────────────────────────
     function appendRow(d) {

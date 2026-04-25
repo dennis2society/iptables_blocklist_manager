@@ -211,6 +211,33 @@ function cidrToRange(string $cidr): array {
     ];
 }
 
+// ─── Blocklist index ──────────────────────────────────────────────────────────
+
+function loadBlocklistIndex(string $csvDir): array {
+    // Returns: [ cidr => [ source => true, ... ], ... ]
+    // 'source' is the service id (e.g. 'maxmind', 'iplocate', 'ipinfo').
+    // Files without a source column are stored under the '*' wildcard key.
+    $index = [];
+    foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
+        $fh = fopen($file, 'r');
+        if (!$fh) continue;
+        $header = fgetcsv($fh);
+        if (!$header) { fclose($fh); continue; }
+        $cidrCol   = array_search('network', $header, true);
+        $sourceCol = array_search('source',  $header, true);
+        if ($cidrCol === false) { fclose($fh); continue; }
+        while (($row = fgetcsv($fh)) !== false) {
+            $cidr = trim($row[$cidrCol] ?? '');
+            if ($cidr === '') continue;
+            $src = ($sourceCol !== false) ? trim($row[$sourceCol] ?? '') : '';
+            $key = ($src !== '') ? $src : '*';
+            $index[$cidr][$key] = true;
+        }
+        fclose($fh);
+    }
+    return $index;
+}
+
 // ─── Database lookups ─────────────────────────────────────────────────────────
 
 function getAvailableSources(string $dataDir, array $mmdbConfig, array $sessionServiceEnabled = []): array {
@@ -357,6 +384,11 @@ if ($isPost) {
         }
     }
 }
+// Build blocklist index whenever there are IPs to display
+$blocklistIndex = [];
+if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
+    $blocklistIndex = loadBlocklistIndex(__DIR__ . '/blocklist_csvs');
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -461,6 +493,7 @@ if ($isPost) {
         <tbody id="main-tbody">
         <?php foreach ($ips as $idx => $ip):
             $d = $results[$ip];
+            $rowChecked = false;
         ?>
             <tr data-index="<?= $idx ?>"
                 data-ip="<?= h($ip) ?>"
@@ -487,8 +520,13 @@ if ($isPost) {
                     $cc   = $s['country_code'] ? ' [' . h($s['country_code']) . ']' : '';
                     $disp = $flag ? $flag . '&nbsp;' . h($s['country']) . $cc : h($s['country']) . $cc;
                     $sep  = $i > 0 ? ' src-sep' : '';
+                    $alreadyBlocked = !$rowChecked && $s['cidr'] !== '' && (
+                        isset($blocklistIndex[$s['cidr']][$service['id']]) ||
+                        isset($blocklistIndex[$s['cidr']]['*'])
+                    );
+                    if ($alreadyBlocked) $rowChecked = true;
                 ?>
-                <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"><?= h($s['cidr']) ?></label><?php endif; ?></td>
+                <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"<?= $alreadyBlocked ? ' checked' : '' ?>><?= h($s['cidr']) ?></label><?php endif; ?></td>
                 <?php [$rStart, $rEnd] = cidrToRange($s['cidr']); ?>
                 <td class="range-col"><?php if ($rStart !== ''): ?><code><?= h($rStart) ?></code><br><code><?= h($rEnd) ?></code><?php endif; ?></td>
                 <td><?= $disp ?></td>
@@ -682,6 +720,9 @@ document.getElementById('clear-list-btn')?.addEventListener('click', function ()
     document.getElementById('net-list').value = '';
     document.querySelectorAll('.net-cb').forEach(function (cb) { cb.checked = false; });
 });
+
+// Pre-populate the net-list textarea from any pre-checked blocklist entries
+updateNetList();
 </script>
 </body>
 </html>

@@ -22,9 +22,21 @@ function ipInCidr(string $ip, string $cidr): bool {
     
     $len = strlen($packed_ip);
     for ($i = 0; $i < $len; $i++) {
-        $bits = max(0, min(8, $prefix - $i * 8));
-        $mask = $bits >= 8 ? 0xff : ($bits > 0 ? (0xff << (8 - $bits)) & 0xff : 0);
-        if ((ord($packed_ip[$i]) & $mask) !== (ord($packed_net[$i]) & $mask)) {
+        $bits = (int)max(0, min(8, $prefix - $i * 8));
+        
+        // Calculate mask explicitly to avoid precedence issues
+        if ($bits >= 8) {
+            $mask = 0xff;
+        } elseif ($bits > 0) {
+            $mask = (int)((0xff << (8 - $bits)) & 0xff);
+        } else {
+            $mask = 0;
+        }
+        
+        $ip_byte = (int)ord($packed_ip[$i]);
+        $net_byte = (int)ord($packed_net[$i]);
+        
+        if (($ip_byte & $mask) !== ($net_byte & $mask)) {
             return false;
         }
     }

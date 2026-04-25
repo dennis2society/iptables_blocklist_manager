@@ -102,8 +102,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
         fclose($fh);
     }
 
+    // ── Removals ────────────────────────────────────────────────────────────
+    $removeRaw = json_decode($_POST['remove_blocklist'] ?? '[]', true) ?? [];
+    $removed   = 0;
+
+    foreach ($removeRaw as $item) {
+        $cidrToRemove = trim($item['cidr'] ?? '');
+        if (!preg_match('#^[0-9a-fA-F:.]+/\d{1,3}$#', $cidrToRemove)) continue;
+
+        foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
+            $fh = fopen($file, 'r');
+            if (!$fh) continue;
+            $header = fgetcsv($fh);
+            if (!$header) { fclose($fh); continue; }
+            $cidrCol = array_search('network', $header, true);
+            if ($cidrCol === false) { fclose($fh); continue; }
+
+            $kept  = [];
+            $found = false;
+            while (($row = fgetcsv($fh)) !== false) {
+                if (trim($row[$cidrCol] ?? '') === $cidrToRemove) {
+                    $found = true;
+                    $removed++;
+                } else {
+                    $kept[] = $row;
+                }
+            }
+            fclose($fh);
+
+            if ($found) {
+                if (empty($kept)) {
+                    unlink($file);
+                } else {
+                    $fh = fopen($file, 'w');
+                    if ($fh) {
+                        fputcsv($fh, $header);
+                        foreach ($kept as $row) fputcsv($fh, $row);
+                        fclose($fh);
+                    }
+                }
+            }
+        }
+    }
+
     header('Content-Type: application/json');
-    echo json_encode(['written' => $written, 'skipped' => $skipped]);
+    echo json_encode(['written' => $written, 'skipped' => $skipped, 'removed' => $removed]);
     exit;
 }
 
@@ -675,7 +718,8 @@ document.getElementById('clear-input-btn')?.addEventListener('click', function (
 });
 
 document.getElementById('export-csv-btn')?.addEventListener('click', function () {
-    const entries = [];
+    const entries  = [];
+    const checkedNow = new Set();
     document.querySelectorAll('tbody tr').forEach(function (row) {
         const cb = row.querySelector('.net-cb:checked');
         if (!cb) return;
@@ -683,7 +727,9 @@ document.getElementById('export-csv-btn')?.addEventListener('click', function ()
         const get = key => row.dataset[s + key] || '';
         const cidr = get('Cidr');
         const cc   = get('CountryCode');
-        if (!cidr || !cc) return;
+        if (!cidr) return;
+        checkedNow.add(cidr + '|' + s);
+        if (!cc) return;
         entries.push({
             cidr:         cidr,
             country_code: cc,
@@ -693,7 +739,17 @@ document.getElementById('export-csv-btn')?.addEventListener('click', function ()
             source:       s,
         });
     });
-    if (!entries.length) {
+
+    // Any initially-blocked entry that is now unchecked should be removed
+    const removals = [];
+    initiallyBlocked.forEach(function (key) {
+        if (!checkedNow.has(key)) {
+            const sep = key.indexOf('|');
+            removals.push({ cidr: key.slice(0, sep), source: key.slice(sep + 1) });
+        }
+    });
+
+    if (!entries.length && !removals.length) {
         alert('No networks checked. Check at least one network checkbox first.');
         return;
     }
@@ -705,11 +761,18 @@ document.getElementById('export-csv-btn')?.addEventListener('click', function ()
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'export_blocklist=' + encodeURIComponent(JSON.stringify(entries))
+            + '&remove_blocklist=' + encodeURIComponent(JSON.stringify(removals))
     })
     .then(r => r.json())
     .then(data => {
-        msg.textContent = '✔ ' + data.written + ' new entr' + (data.written === 1 ? 'y' : 'ies') + ' written' +
-            (data.skipped ? ', ' + data.skipped + ' duplicate' + (data.skipped === 1 ? '' : 's') + ' skipped' : '') + '.';
+        const parts = [];
+        if (data.written)  parts.push('✔ ' + data.written + ' new entr' + (data.written === 1 ? 'y' : 'ies') + ' written');
+        if (data.skipped)  parts.push(data.skipped + ' existing entries skipped');
+        if (data.removed)  parts.push(data.removed + ' entr' + (data.removed === 1 ? 'y' : 'ies') + ' removed');
+        msg.textContent = parts.length ? parts.join(', ') + '.' : 'No changes.';
+        // Update initiallyBlocked to reflect the new state
+        initiallyBlocked.clear();
+        checkedNow.forEach(function (key) { initiallyBlocked.add(key); });
     })
     .catch(() => { msg.textContent = '✖ Export failed.'; })
     .finally(() => { btn.disabled = false; });
@@ -719,6 +782,14 @@ document.getElementById('export-csv-btn')?.addEventListener('click', function ()
 document.getElementById('clear-list-btn')?.addEventListener('click', function () {
     document.getElementById('net-list').value = '';
     document.querySelectorAll('.net-cb').forEach(function (cb) { cb.checked = false; });
+});
+
+// Record which cidr|source pairs are pre-checked (already in blocklist)
+const initiallyBlocked = new Set();
+document.querySelectorAll('.net-cb:checked').forEach(function (cb) {
+    const dataKey = cb.dataset.src + 'Cidr';
+    const cidr = cb.closest('tr').dataset[dataKey];
+    if (cidr) initiallyBlocked.add(cidr + '|' + cb.dataset.src);
 });
 
 // Pre-populate the net-list textarea from any pre-checked blocklist entries

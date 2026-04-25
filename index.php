@@ -110,6 +110,14 @@ function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function escapeCsvFormula(string $s): string {
+    // Prevent CSV injection by prefixing formula-like content with single quote
+    if (strlen($s) > 0 && in_array($s[0], ['=', '+', '-', '@'], true)) {
+        return "'" . $s;
+    }
+    return $s;
+}
+
 function countryFlag(string $code): string {
     if (strlen($code) !== 2) return '';
     $out = '';

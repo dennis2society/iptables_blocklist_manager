@@ -373,7 +373,7 @@ if ($isPost) {
 </head>
 <body>
 <h1>IP Lookup</h1>
-<p><a href="country_asn_lookup.php">Country ASN Lookup →</a></p>
+<p><a href="asn_view.php">ASN Network Lookup →</a></p>
 
 <form method="post">
     <div class="form-row">

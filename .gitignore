@@ -1,5 +1,5 @@
 *.mmdb
 blocklist_csvs/
 *~
-cache
+asn_cache
 phpinfo.php

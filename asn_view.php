@@ -110,14 +110,15 @@ function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-$rawAsn = strtoupper(preg_replace('/[^A-Z0-9]/', '', $_GET['asn'] ?? ''));
-if (!preg_match('/^AS\d+$/', $rawAsn)) {
-    http_response_code(400);
-    echo '<!DOCTYPE html><html><body><p>Invalid ASN.</p></body></html>';
-    exit;
+$rawInput = trim($_GET['asn'] ?? '');
+// Accept bare numbers (e.g. "204548") as well as "AS204548"
+$rawAsn = strtoupper(preg_replace('/[^A-Z0-9]/', '', $rawInput));
+if ($rawAsn !== '' && ctype_digit($rawAsn)) {
+    $rawAsn = 'AS' . $rawAsn;
 }
+$hasAsn = preg_match('/^AS\d+$/', $rawAsn);
 
-$csvFiles   = glob(__DIR__ . '/asn_cache/' . $rawAsn . '_*.csv') ?: [];
+$csvFiles   = $hasAsn ? (glob(__DIR__ . '/asn_cache/' . $rawAsn . '_*.csv') ?: []) : [];
 $hasCached  = !empty($csvFiles);
 $cachedTime = $hasCached ? filemtime($csvFiles[0]) : null;
 
@@ -125,6 +126,7 @@ $cachedTime = $hasCached ? filemtime($csvFiles[0]) : null;
 
 $networks = [];
 $orgName  = '';
+if (!$hasAsn) { $networks = []; }
 foreach ($csvFiles as $csvFile) {
     $fh = fopen($csvFile, 'r');
     if (!$fh) continue;
@@ -157,14 +159,27 @@ foreach ($csvFiles as $csvFile) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASN View – <?= h($rawAsn) ?></title>
+<title>ASN Lookup<?= $hasAsn ? ' – ' . h($rawAsn) : '' ?></title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1 id="page-title">ASN Networks – <?= h($rawAsn) ?></h1>
+<h1 id="page-title">ASN Networks<?= $hasAsn ? ' – ' . h($rawAsn) : '' ?></h1>
 <p><a href="index.php">← Back to IP Lookup</a></p>
 
+<!-- ─── ASN search ──────────────────────────────────────────────────────── -->
+<form method="get" class="asn-search-form">
+    <input type="search" name="asn" value="<?= $hasAsn ? h($rawAsn) : '' ?>"
+           placeholder="ASN — e.g. 204548 or AS204548"
+           pattern="[Aa][Ss]?\d+|\d+"
+           inputmode="numeric"
+           spellcheck="false"
+           autofocus
+           class="asn-search-input">
+    <button type="submit" class="btn-primary">Look up</button>
+</form>
+
 <!-- ─── Controls ─────────────────────────────────────────────────────────── -->
+<?php if ($hasAsn): ?>
 <div class="asn-controls">
     <form method="post" style="display:inline">
         <input type="hidden" name="csrf_token" value="<?= h($_SESSION['csrf_token']) ?>">
@@ -180,7 +195,8 @@ foreach ($csvFiles as $csvFile) {
 </div>
 
 <?php if (!$hasCached): ?>
-<p class="notice-warn">No precomputed data for <?= h($rawAsn) ?>. Run <code>python3 asn_scan.py</code> to generate it.</p>
+<p class="notice-warn">No precomputed data for <?= h($rawAsn) ?>. Run <code>python3 asn_cache_generator.py</code> to generate it.</p>
+<?php endif; ?>
 <?php endif; ?>
 
 <!-- ─── Result area ──────────────────────────────────────────────────────── -->

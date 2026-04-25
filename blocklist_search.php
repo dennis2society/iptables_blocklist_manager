@@ -14,19 +14,19 @@ function ipInCidr(string $ip, string $cidr): bool {
     [$net, $prefix] = explode('/', $cidr, 2) + [1 => null];
     if ($prefix === null) return false;
     $prefix = (int)$prefix;
+    
     $packed_ip = inet_pton($ip);
     $packed_net = inet_pton($net);
     if ($packed_ip === false || $packed_net === false) return false;
     if (strlen($packed_ip) !== strlen($packed_net)) return false;
     
-    $ip_bytes = array_values(unpack('C*', $packed_ip));
-    $net_bytes = array_values(unpack('C*', $packed_net));
-    $len = count($ip_bytes);
-    
+    $len = strlen($packed_ip);
     for ($i = 0; $i < $len; $i++) {
-        $bits = (int)min(8, max(0, $prefix - $i * 8));
-        $mask = $bits === 8 ? 0xff : ($bits > 0 ? ((0xff << (8 - $bits)) & 0xff) : 0);
-        if (($ip_bytes[$i] & $mask) !== ($net_bytes[$i] & $mask)) return false;
+        $bits = max(0, min(8, $prefix - $i * 8));
+        $mask = $bits >= 8 ? 0xff : ($bits > 0 ? (0xff << (8 - $bits)) & 0xff : 0);
+        if ((ord($packed_ip[$i]) & $mask) !== (ord($packed_net[$i]) & $mask)) {
+            return false;
+        }
     }
     return true;
 }

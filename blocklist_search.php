@@ -18,11 +18,15 @@ function ipInCidr(string $ip, string $cidr): bool {
     $packed_net = inet_pton($net);
     if ($packed_ip === false || $packed_net === false) return false;
     if (strlen($packed_ip) !== strlen($packed_net)) return false;
-    $len = strlen($packed_ip);
+    
+    $ip_bytes = array_values(unpack('C*', $packed_ip));
+    $net_bytes = array_values(unpack('C*', $packed_net));
+    $len = count($ip_bytes);
+    
     for ($i = 0; $i < $len; $i++) {
-        $bits = min(8, max(0, $prefix - $i * 8));
-        $mask = $bits === 8 ? 0xff : ($bits > 0 ? (0xff << (8 - $bits)) & 0xff : 0);
-        if ((ord($packed_ip[$i]) & $mask) !== (ord($packed_net[$i]) & $mask)) return false;
+        $bits = (int)min(8, max(0, $prefix - $i * 8));
+        $mask = $bits === 8 ? 0xff : ($bits > 0 ? ((0xff << (8 - $bits)) & 0xff) : 0);
+        if (($ip_bytes[$i] & $mask) !== ($net_bytes[$i] & $mask)) return false;
     }
     return true;
 }

@@ -12,7 +12,7 @@ Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 - Select networks to export by country and IP version (IPv4/IPv6)
 - Generate presistent blocklists as separate CSV files per country code or ASN
 - Deduplication: prevents duplicate entries when exporting or updating
-- Locally cached network ranges per ASN list (refresh on demand)
+- Locally cached network ranges per ASN list (offline generation using asn_cache_generator.py)
 
 ## <span style="color: darkorange;">Disclaimer</span>
 

@@ -1,26 +1,17 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__ . '/headers.php';
+require __DIR__ . '/security_utils.php';
+
 session_start();
-
-// Generate CSRF token if not in session
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-
-// Escape CSV formula injection (=, +, @, -)
-function escapeCsvFormula(string $value): string {
-    if (preg_match('/^[=+@-]/', $value)) {
-        return "'" . $value;
-    }
-    return $value;
-}
+ensureCsrfToken();
 
 // ─── Clear-cache action ───────────────────────────────────────────────────────
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_cache'])) {
     // Validate CSRF token
-    if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         http_response_code(403);
         die('CSRF token validation failed');
     }
@@ -300,21 +291,39 @@ foreach ($csvFiles as $csvFile) {
         }
         return (a || '').localeCompare(b || '');
     }
-    function sortBy(col) {
-        if (activeCol === col) activeDir *= -1; else { activeCol = col; activeDir = 1; }
+    const SORT_KEY = 'asnview_sort_' + asn;
+
+    function _applySort(col, dir) {
+        activeCol = col; activeDir = dir;
         [...tbody.querySelectorAll('tr')]
-            .sort((ra, rb) => cmp(col, ra.dataset[col] ?? '', rb.dataset[col] ?? '') * activeDir)
+            .sort((ra, rb) => cmp(col, ra.dataset[col] ?? '', rb.dataset[col] ?? '') * dir)
             .forEach(r => tbody.appendChild(r));
         document.querySelectorAll('#net-table th.sortable').forEach(th => {
             th.classList.remove('sort-asc','sort-desc');
-            if (th.dataset.col === activeCol)
-                th.classList.add(activeDir === 1 ? 'sort-asc' : 'sort-desc');
+            if (th.dataset.col === col)
+                th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
         });
         updateRowNums();
+    }
+
+    function sortBy(col) {
+        const dir = activeCol === col ? activeDir * -1 : 1;
+        _applySort(col, dir);
+        sessionStorage.setItem(SORT_KEY, JSON.stringify({col, dir}));
     }
     document.querySelectorAll('#net-table th.sortable').forEach(th =>
         th.addEventListener('click', () => sortBy(th.dataset.col))
     );
+
+    // Restore sort on back-navigation (handles bfcache too)
+    window.addEventListener('pageshow', () => {
+        const saved = sessionStorage.getItem(SORT_KEY);
+        if (!saved) return;
+        try {
+            const {col, dir} = JSON.parse(saved);
+            if (col) _applySort(col, dir);
+        } catch (_) {}
+    });
 
     function updateRowNums() {
         tbody.querySelectorAll('tr').forEach((tr, i) => {

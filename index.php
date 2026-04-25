@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__ . '/headers.php';
+require __DIR__ . '/security_utils.php';
+
 session_start();
 
 if (!extension_loaded('maxminddb')) {
@@ -108,14 +111,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
 
 function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-}
-
-function escapeCsvFormula(string $s): string {
-    // Prevent CSV injection by prefixing formula-like content with single quote
-    if (strlen($s) > 0 && in_array($s[0], ['=', '+', '-', '@'], true)) {
-        return "'" . $s;
-    }
-    return $s;
 }
 
 function countryFlag(string $code): string {
@@ -555,6 +550,7 @@ if (history.replaceState) {
             .forEach(r => tbody.appendChild(r));
         updateIndicators();
         updateRowNums(tbody);
+        sessionStorage.setItem('iplookup_sort', JSON.stringify({col: activeCol, dir: activeDir}));
     }
 
     function updateIndicators() {
@@ -576,6 +572,24 @@ if (history.replaceState) {
             .forEach(r => tbody.appendChild(r));
         updateIndicators();
         updateRowNums(tbody);
+        sessionStorage.removeItem('iplookup_sort');
+    });
+
+    // Restore sort state when arriving via back-navigation (bfcache or normal history)
+    window.addEventListener('pageshow', () => {
+        const saved = sessionStorage.getItem('iplookup_sort');
+        if (!saved) return;
+        try {
+            const {col, dir} = JSON.parse(saved);
+            if (!col) return;
+            activeCol = col; activeDir = dir;
+            const key = toCamel(col);
+            [...tbody.querySelectorAll('tr')]
+                .sort((ra, rb) => cmp(col, ra.dataset[key] ?? '', rb.dataset[key] ?? '') * activeDir)
+                .forEach(r => tbody.appendChild(r));
+            updateIndicators();
+            updateRowNums(tbody);
+        } catch (_) {}
     });
 
     function updateRowNums(tb) {

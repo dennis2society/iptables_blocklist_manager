@@ -14,11 +14,13 @@ Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 - Deduplication: prevents duplicate entries when exporting or updating
 - Locally cached network ranges per ASN list (offline generation using asn_cache_generator.py)
 
-## <span style="color: darkorange;">Disclaimer</span>
+## Disclaimer
 
-<b>This thing is mostly AI generated</b> but it works well enough for me because 
-I run this locally and am only feeding it input I trust (my own server's 
-Logwatch reports).  Would I trust this to run publicly exposed? No!
+<b>This thing is mostly AI generated</b> by throwing a more or less sophisticated streak
+of prompts at github copilot. Considering this, it works well enough for me because
+  1. I run this locally and am only feeding it input I trust (my own server's Logwatch reports). 
+  2. Would I trust this to run publicly exposed?
+     Better not...
 
 <b>Use with care! Better do not expose to public access!</b>
 

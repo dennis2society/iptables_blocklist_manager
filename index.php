@@ -443,7 +443,7 @@ if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
 </head>
 <body>
 <h1>Logwatch Fail2Ban iptables generator</h1>
-<p><a href="asn_view.php">ASN Network Lookup →</a></p>
+<p><a href="asn_view.php">ASN Network Lookup →</a> | <a href="blocklist_search.php">Search Blocklists →</a></p>
 
 <form method="post">
     <div class="form-row">

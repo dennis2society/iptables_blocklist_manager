@@ -2,8 +2,9 @@
 
 ![Screenshot](screenshot.jpg)
 
-This is a PHP web app to manage per country/ASN blocklists in iptables.
-There is also a search form to test a list of IP addresses against local GeoIP databases. 
+This is a PHP web app to manage per country/ASN blocklists.
+There is also a search form to test a list of IP addresses against local GeoIP databases
+printing country, ASN and network range.
 Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 
 ## Features
@@ -49,6 +50,8 @@ of prompts at github copilot. Considering this, it works well enough for me beca
 2. Select a result set by checking one checkbox per row
 3. Click "Export to blocklist CSVs"
 4. CSV files are saved to `blocklist_csvs/{CC}_v4.csv` and `blocklist_csvs/{CC}_v6.csv`
+5. After a change to a blocklist run "sudo update_iptables.sh" to update the iptables rules
+   (Adds and removes new and removed entries)
 
 ## CSV Format
 

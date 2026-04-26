@@ -153,92 +153,10 @@ if ($isPost && isset($_POST['search_ip'])) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blocklist Search</title>
 <link rel="stylesheet" href="style.css">
-<style>
-.search-container {
-    background: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 15px;
-    margin-bottom: 20px;
-}
-.search-form {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-}
-.search-form input {
-    flex: 1;
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-family: monospace;
-}
-.search-form button {
-    padding: 8px 16px;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-.search-form button:hover {
-    background: #0056b3;
-}
-.results-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}
-.results-table thead {
-    background: #f0f0f0;
-    font-weight: bold;
-}
-.results-table th,
-.results-table td {
-    padding: 10px;
-    border: 1px solid #ddd;
-    text-align: left;
-}
-.results-table tbody tr:nth-child(odd) {
-    background: #f9f9f9;
-}
-.results-table tbody tr:hover {
-    background: #fffacd;
-}
-.remove-btn {
-    padding: 4px 8px;
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-}
-.remove-btn:hover {
-    background: #c82333;
-}
-.no-results {
-    text-align: center;
-    padding: 20px;
-    color: #666;
-    font-style: italic;
-}
-.back-link {
-    display: inline-block;
-    margin-bottom: 15px;
-}
-.back-link a {
-    color: #007bff;
-    text-decoration: none;
-}
-.back-link a:hover {
-    text-decoration: underline;
-}
-</style>
 </head>
 <body>
 <h1>Blocklist Search</h1>
-<p class="back-link"><a href="index.php">← Back to IP Lookup</a></p>
+<p class="back-link"><a href="index.php">← IP Lookup</a> | <a href="asn_view.php">ASN Network Lookup →</a> | <a href="edit_blocklist.php">Edit Blocklist →</a></p>
 
 <div class="search-container">
     <form method="post" class="search-form">

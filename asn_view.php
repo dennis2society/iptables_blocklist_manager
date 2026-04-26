@@ -155,7 +155,7 @@ foreach ($csvFiles as $csvFile) {
 </head>
 <body>
 <h1 id="page-title">ASN Networks<?= $hasAsn ? ' – ' . h($rawAsn) : '' ?></h1>
-<p><a href="index.php">← Back to IP Lookup</a></p>
+<p><a href="index.php">← IP Lookup</a> | <a href="blocklist_search.php">Search Blocklists →</a> | <a href="edit_blocklist.php">Edit Blocklist →</a></p>
 
 <!-- ─── ASN search ──────────────────────────────────────────────────────── -->
 <form method="get" class="asn-search-form">

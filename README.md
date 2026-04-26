@@ -1,18 +1,20 @@
-# logwatch_fail2ban_blocklist_generator
+# IPTables Blocklist Manager
 
 ![Screenshot](screenshot.jpg)
 
-This is a PHP web app for generating per-country/ASN, per-IP-version CSV blocklists by 
-looking up IPs against local GeoIP databases. 
+This is a PHP web app to manage per country/ASN blocklists in iptables.
+There is also a search form to test a list of IP addresses against local GeoIP databases. 
 Supports MaxMind GeoLite2, iplocate.io, and ipinfo Lite databases.
 
 ## Features
 
+- Manages per country/ASN blocklists for IPv4/6
 - Query multiple GeoIP databases per IP
 - Select networks to export by country and IP version (IPv4/IPv6)
 - Generate presistent blocklists as separate CSV files per country code or ASN
 - Deduplication: prevents duplicate entries when exporting or updating
 - Locally cached network ranges per ASN list (offline generation using asn_cache_generator.py)
+- manual/cron-controlled update of iptables rules after changes to the local blocklists
 
 ## Disclaimer
 

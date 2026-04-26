@@ -38,7 +38,7 @@ of prompts at github copilot. Considering this, it works well enough for me beca
 1. **Download MMDB database files manually:**
   (not all are necessary, app will ignore missing DBs)
    - iplocate.io: https://iplocate.io/
-   - ipinfo Lite: https://ipinfo.io/
+   - (Requires registration) ipinfo Lite: https://ipinfo.io/
    - (Commercial) MaxMind GeoLite2: https://www.maxmind.com/en/products/geoip2/geolite2
 2. Place `.mmdb` files in the same directory as `index.php`
 3. Adjust file paths/names in `mmdb_config.php` if needed

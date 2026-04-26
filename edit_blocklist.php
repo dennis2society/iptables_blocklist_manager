@@ -200,47 +200,15 @@ foreach ($groups as $fname => $idxList) {
     ];
 }
 
-$totalEntries = count($entries);
-$totalGroups  = count($groups);
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Edit Blocklist</title>
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-<h1>Edit Blocklist</h1>
-<p><a href="index.php">← IP Lookup</a> | <a href="asn_view.php">ASN Network Lookup →</a> | <a href="blocklist_search.php">Search Blocklists →</a></p>
+$totalEntries  = count($entries);
+$totalGroups   = count($groups);
+$countryGroups = array_filter($groups, fn($f) => $groupMeta[$f]['type'] === 'country', ARRAY_FILTER_USE_KEY);
+$asnGroups     = array_filter($groups, fn($f) => $groupMeta[$f]['type'] === 'asn',     ARRAY_FILTER_USE_KEY);
 
-<div class="bl-controls">
-    <div class="bl-search-wrap">
-        <input id="bl-search" class="bl-search-input" type="search"
-               placeholder="Filter by network, ASN, org, source, country, added date…"
-               autocomplete="off">
-        <button id="bl-search-clear" class="bl-search-clear" type="button">Clear</button>
-    </div>
-    <button id="bl-expand-all"   class="btn-secondary" type="button">Expand all</button>
-    <button id="bl-collapse-all" class="btn-secondary" type="button">Collapse all</button>
-    <button id="sort-reset"      class="btn-secondary" type="button">Reset sort</button>
-    <span class="bl-summary">
-        <span id="bl-count"><?= $totalEntries ?></span> of <?= $totalEntries ?> entr<?= $totalEntries !== 1 ? 'ies' : 'y' ?>
-        in <?= $totalGroups ?> group<?= $totalGroups !== 1 ? 's' : '' ?>
-    </span>
-    <span id="bl-msg" class="bl-msg"></span>
-</div>
-
-<?php if (empty($entries)): ?>
-<p class="no-entries">No blocklist entries found. Add entries via the <a href="index.php">IP Lookup</a> page.</p>
-<?php else: ?>
-
-<?php foreach ($groups as $fname => $idxList):
-    $meta = $groupMeta[$fname];
-?>
+function renderGroup(string $fname, array $meta, array $idxList, array $entries): string {
+    ob_start(); ?>
 <section class="bl-group" data-file="<?= h($fname) ?>">
-    <button class="bl-group-hdr" type="button" aria-expanded="true">
+    <button class="bl-group-hdr bl-collapsed" type="button" aria-expanded="false">
         <span class="bl-group-arrow">▼</span>
         <span class="bl-group-label"><?= h($meta['label']) ?></span>
         <span class="bl-group-count">(<span class="bl-group-vis"><?= $meta['count'] ?></span>&thinsp;/&thinsp;<?= $meta['count'] ?> entries)</span>
@@ -251,7 +219,7 @@ $totalGroups  = count($groups);
                 data-count="<?= $meta['count'] ?>"
                 title="Remove entire blocklist file">✕ Remove all</button>
     </button>
-    <div class="bl-group-body">
+    <div class="bl-group-body bl-collapsed">
         <div class="table-wrap">
         <table class="bl-table" data-type="<?= h($meta['type']) ?>">
             <thead>
@@ -304,7 +272,71 @@ $totalGroups  = count($groups);
         </div>
     </div>
 </section>
+<?php
+    return ob_get_clean();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit Blocklist</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Edit Blocklist</h1>
+<p><a href="index.php">← IP Lookup</a> | <a href="asn_view.php">ASN Network Lookup →</a> | <a href="blocklist_search.php">Search Blocklists →</a></p>
+
+<div class="bl-controls">
+    <div class="bl-search-wrap">
+        <input id="bl-search" class="bl-search-input" type="search"
+               placeholder="Filter by network, ASN, org, source, country, added date…"
+               autocomplete="off">
+        <button id="bl-search-clear" class="bl-search-clear" type="button">Clear</button>
+    </div>
+    <button id="bl-expand-all"   class="btn-secondary" type="button">Expand all</button>
+    <button id="bl-collapse-all" class="btn-secondary" type="button">Collapse all</button>
+    <button id="sort-reset"      class="btn-secondary" type="button">Reset sort</button>
+    <span class="bl-summary">
+        <span id="bl-count"><?= $totalEntries ?></span> of <?= $totalEntries ?> entr<?= $totalEntries !== 1 ? 'ies' : 'y' ?>
+        in <?= $totalGroups ?> group<?= $totalGroups !== 1 ? 's' : '' ?>
+    </span>
+    <span id="bl-msg" class="bl-msg"></span>
+</div>
+
+<?php if (!empty($entries)): ?>
+<div class="bl-jumps">
+    <?php if (!empty($countryGroups)): ?>
+    <a class="bl-jump-link" href="#section-countries">↓ Country Blocklists (<?= count($countryGroups) ?>)</a>
+    <?php endif; ?>
+    <?php if (!empty($asnGroups)): ?>
+    <a class="bl-jump-link" href="#section-asns">↓ ASN Blocklists (<?= count($asnGroups) ?>)</a>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if (empty($entries)): ?>
+<p class="no-entries">No blocklist entries found. Add entries via the <a href="index.php">IP Lookup</a> page.</p>
+<?php else: ?>
+
+<?php if (!empty($countryGroups)): ?>
+<h2 id="section-countries" class="bl-section-hdr">Country Blocklists <span class="bl-section-count"><?= count($countryGroups) ?> file<?= count($countryGroups) !== 1 ? 's' : '' ?></span></h2>
+<?php foreach ($countryGroups as $fname => $idxList):
+    $meta = $groupMeta[$fname];
+?>
+<?= renderGroup($fname, $meta, $idxList, $entries) ?>
 <?php endforeach; ?>
+<?php endif; ?>
+
+<?php if (!empty($asnGroups)): ?>
+<h2 id="section-asns" class="bl-section-hdr">ASN Blocklists <span class="bl-section-count"><?= count($asnGroups) ?> file<?= count($asnGroups) !== 1 ? 's' : '' ?></span></h2>
+<?php foreach ($asnGroups as $fname => $idxList):
+    $meta = $groupMeta[$fname];
+?>
+<?= renderGroup($fname, $meta, $idxList, $entries) ?>
+<?php endforeach; ?>
+<?php endif; ?>
 
 <?php endif; ?>
 

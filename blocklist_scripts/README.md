@@ -15,16 +15,24 @@ This folder contains helper scripts for managing and applying IP blocklists via 
 ### Script Descriptions
 
 - **`get_networks_from_CSVs.py`** - Parses CSV files and outputs network ranges as JSON
-  - Usage: `python3 get_networks_from_CSVs.py [CSV_DIR]`
-  - Default CSV directory: `../blocklist_csvs`
+  - ⚠️ **Internal use only** - called by `update_iptables.sh`, not meant to be run directly
+  - Requires: `pandas` Python module
 
-- **`update_iptables.sh`** - Applies network blocks to iptables rules
-  - Usage: `sudo sh update_iptables.sh [CSV_DIR]`
-  - Requires: bash 4.0+, root/sudo privileges
+- **`update_iptables.sh`** - Applies network blocks to iptables rules (main entry point)
+  - Usage: `sudo bash update_iptables.sh [CSV_DIR]`
+  - Requires: bash 4.0+, root/sudo privileges, Python 3 with pandas
 
 - **`ipv4_count_rules.sh`** - Counts IPv4 blocklist rules
 
 - **`ipv6_count_rules.sh`** - Counts IPv6 blocklist rules
+
+### Dependencies
+
+- **bash 4.0+** - Required for associative arrays in `update_iptables.sh`
+- **Python 3** - Required for CSV parsing
+- **pandas** - Python module for CSV handling
+  - Install via venv: `pip install pandas`
+  - Or install globally: `pip3 install pandas` or `apt install python3-pandas`
 
 ### Usage Example
 
@@ -32,10 +40,7 @@ This folder contains helper scripts for managing and applying IP blocklists via 
 # From terminal - web access is blocked by .htaccess
 cd /var/www/html/$REPO/blocklist_scripts
 
-# Get networks from CSVs
-python3 get_networks_from_CSVs.py ../blocklist_csvs
-
-# Update iptables (requires sudo)
+# Update iptables (calls get_networks_from_CSVs.py internally)
 sudo bash update_iptables.sh ../blocklist_csvs
 ```
 

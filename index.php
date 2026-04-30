@@ -12,7 +12,17 @@ if (!extension_loaded('maxminddb')) {
 }
 
 $DATA_DIR = __DIR__ . '/';
-$MMDB_CONFIG = require __DIR__ . '/mmdb_config.php';
+$CONFIG = require __DIR__ . '/config.php';
+$MMDB_CONFIG = $CONFIG['databases'];
+$BLOCKLIST_CSVS_DIR = $CONFIG['blocklist_csvs_dir'];
+
+// Initialize session database toggles from config defaults if not already set
+if (!isset($_SESSION['service_enabled'])) {
+    $_SESSION['service_enabled'] = [];
+    foreach ($MMDB_CONFIG as $service) {
+        $_SESSION['service_enabled'][$service['id']] = $service['enabled'] ?? true;
+    }
+}
 
 // Handle database enable/disable toggles
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_service'])) {
@@ -26,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_service'])) {
 // ─── CSV blocklist export ─────────────────────────────────────────────────────
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) {
-    $csvDir = __DIR__ . '/blocklist_csvs';
+    $csvDir = $BLOCKLIST_CSVS_DIR;
     if (!is_dir($csvDir) && !mkdir($csvDir, 0755, true)) {
         http_response_code(500);
         header('Content-Type: application/json');
@@ -170,30 +180,47 @@ function countryFlag(string $code): string {
 function extractIPs(string $text): array {
     $ips  = [];
     $seen = [];
+    $services = [];  // Track service/jail names
+    $currentService = '';
 
-    // IPv4
-    preg_match_all(
-        '/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/',
-        $text, $m
-    );
-    foreach ($m[0] as $ip) {
-        if (!isset($seen[$ip]) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $seen[$ip] = true;
-            $ips[] = $ip;
+    // Parse lines to detect service/jail headers (lines ending with : after trimming)
+    $lines = explode("\n", $text);
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+        // Check if this line is a service/jail header (ends with : and looks like a service name)
+        // Matches patterns like "apache-d2s:", "Logout/aborts:", etc.
+        if (preg_match('/^[a-zA-Z][a-zA-Z0-9\-\/ ]*:$/', $trimmed)) {
+            $currentService = rtrim($trimmed, ':');
+            continue;  // Skip this line, move to next
         }
-    }
-
-    // IPv6 — broad match then validate; strip trailing single colon (not ::)
-    preg_match_all(
-        '/[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}/',
-        $text, $m
-    );
-    foreach ($m[0] as $raw) {
-        // Remove a trailing colon only if it is not preceded by another colon
-        $ip = preg_replace('/(?<!:):$/', '', $raw);
-        if (!isset($seen[$ip]) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $seen[$ip] = true;
-            $ips[] = $ip;
+        
+        // Extract IPs from this line (regardless of whether a service header was found)
+        // IPv4
+        if (preg_match_all(
+            '/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/',
+            $line, $m
+        )) {
+            foreach ($m[0] as $ip) {
+                if (!isset($seen[$ip]) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    $seen[$ip] = true;
+                    $ips[] = $ip;
+                    $services[$ip] = $currentService;
+                }
+            }
+        }
+        // IPv6 — broad match then validate; strip trailing single colon (not ::)
+        if (preg_match_all(
+            '/[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}/',
+            $line, $m
+        )) {
+            foreach ($m[0] as $raw) {
+                $ip = preg_replace('/(?<!:):$/', '', $raw);
+                if (!isset($seen[$ip]) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+                    $seen[$ip] = true;
+                    $ips[] = $ip;
+                    $services[$ip] = $currentService;
+                }
+            }
         }
     }
 
@@ -206,7 +233,7 @@ function extractIPs(string $text): array {
         }
     }
 
-    return [$ips, $counts];
+    return [$ips, $counts, $services];
 }
 
 // ─── Network helpers ────────────────────────────────────────────────────────────
@@ -392,6 +419,7 @@ $isIpLookup = (!$isPost && !$isRestore && isset($_GET['ip']));
 $sessionServiceEnabled = $_SESSION['service_enabled'] ?? [];
 $availableSources = getAvailableSources($DATA_DIR, $MMDB_CONFIG, $sessionServiceEnabled);
 $hasDatabases = count($availableSources) > 0;
+$services = [];  // Track service/jail names for IPs
 
 if ($isPost) {
     // If iptext is in POST (main form submission), use it; otherwise restore from session
@@ -403,14 +431,14 @@ if ($isPost) {
     }
     
     if (!isset($_POST['toggle_service'])) {
-        [$ips, $counts] = extractIPs($inputText);
+        [$ips, $counts, $services] = extractIPs($inputText);
         if ($ips && $hasDatabases) {
             $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
         }
     }
 } elseif ($isRestore) {
     $inputText = $_SESSION['last_input_text'];
-    [$ips, $counts] = extractIPs($inputText);
+    [$ips, $counts, $services] = extractIPs($inputText);
     if ($ips && $hasDatabases) {
         $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
     }
@@ -421,7 +449,7 @@ if ($isPost) {
     $inputText = preg_replace('#[^0-9a-fA-F.:/]#', '', $rawIp);
     if ($inputText !== '') {
         $_SESSION['last_input_text'] = $inputText;
-        [$ips, $counts] = extractIPs($inputText);
+        [$ips, $counts, $services] = extractIPs($inputText);
         if ($ips && $hasDatabases) {
             $results = lookupAll($ips, $DATA_DIR, $MMDB_CONFIG, $availableSources, $sessionServiceEnabled);
         }
@@ -429,8 +457,8 @@ if ($isPost) {
 }
 // Build blocklist index whenever there are IPs to display
 $blocklistIndex = [];
-if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
-    $blocklistIndex = loadBlocklistIndex(__DIR__ . '/blocklist_csvs');
+if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
+    $blocklistIndex = loadBlocklistIndex($BLOCKLIST_CSVS_DIR);
 }
 ?>
 <!DOCTYPE html>
@@ -513,6 +541,7 @@ if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
                 <th rowspan="2" class="row-num-col">#</th>
                 <th rowspan="2" class="sortable" data-col="ip">IP Address</th>
                 <th rowspan="2" class="sortable" data-col="count">#</th>
+                <th rowspan="2" class="sortable" data-col="service">Service/Jail</th>
                 <?php foreach ($MMDB_CONFIG as $i => $service):
                     if (!($availableSources[$service['id']] ?? false)) continue;
                     $sep = $i > 0 ? ' src-sep' : '';
@@ -541,6 +570,7 @@ if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
             <tr data-index="<?= $idx ?>"
                 data-ip="<?= h($ip) ?>"
                 data-count="<?= (int)($counts[$ip] ?? 0) ?>"
+                data-service="<?= h($services[$ip] ?? '') ?>"
                 <?php foreach ($MMDB_CONFIG as $service):
                     if (!($availableSources[$service['id']] ?? false)) continue;
                 ?>data-<?= h($service['id']) ?>-cidr="<?= h($d[$service['id']]['cidr']) ?>"
@@ -552,6 +582,7 @@ if (!empty($ips) && is_dir(__DIR__ . '/blocklist_csvs')) {
                 <td class="row-num-col row-num"></td>
                 <td class="ip"><code><a href="https://ipinfo.io/<?= h(rawurlencode($ip)) ?>" target="_blank" rel="noopener noreferrer"><?= h($ip) ?></a></code></td>
                 <td class="count-col"><?= !empty($counts[$ip]) ? (int)$counts[$ip] : '' ?></td>
+                <td class="service"><?= h($services[$ip] ?? '') ?></td>
                 <?php $srcOrder = array_keys(array_filter($availableSources)); foreach ($srcOrder as $i => $serviceId):
                     $service = null;
                     foreach ($MMDB_CONFIG as $svc) {

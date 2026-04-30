@@ -8,6 +8,9 @@
 
 return [
     // ─── Application Settings ─────────────────────────────────────────────────
+    // SECURITY NOTE: For production deployments, blocklist_csvs_dir should point
+    // to a directory OUTSIDE the webroot for security. See blocklist_scripts/README.md
+    // for setup instructions (move to /opt/ip-lookup-data or similar and symlink back).
     'blocklist_csvs_dir' => __DIR__ . '/blocklist_csvs',
     
     // ─── GeoIP Database Configuration ──────────────────────────────────────────

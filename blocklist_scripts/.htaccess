@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BLOCKLIST SCRIPTS - DENY WEB ACCESS
+# ─────────────────────────────────────────────────────────────────────────────
+# This .htaccess file blocks all web browser access to the blocklist_scripts folder.
+# These scripts should ONLY be executed from the terminal/command line.
+#
+# If you see this file being served, your scripts folder is publicly accessible
+# via the web, which is a SECURITY ISSUE. Please follow the setup instructions
+# in README.md to move this folder outside the webroot.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Deny all web requests
+<FilesMatch ".*">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Alternative: Block specific script execution
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+
+# Block Python script execution
+<FilesMatch "\.py$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Block shell script execution
+<FilesMatch "\.sh$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Explicit deny message (if viewing directory listing)
+<IfModule mod_autoindex.c>
+    IndexIgnore *
+</IfModule>

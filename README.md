@@ -30,28 +30,82 @@ of prompts at github copilot. Considering this, it works well enough for me beca
 ## Requirements
 
 - PHP 8.0+ with `maxminddb` extension
-- MMDB database files (MaxMind, iplocate.io, or ipinfo)
-- Web server with write access to `blocklist_csvs/` directory
+- MMDB database files (MaxMind, iplocate.io, and/or ipinfo)
+- Web server with write access to configured blocklist directory
+- (Optional) bash 4.0+ and root/sudo for running iptables scripts
 
 ## Setup
 
-1. **Download MMDB database files manually:**
-  (not all are necessary, app will ignore missing DBs)
-   - iplocate.io: https://iplocate.io/
-   - (Requires registration) ipinfo Lite: https://ipinfo.io/
-   - (Commercial) MaxMind GeoLite2: https://www.maxmind.com/en/products/geoip2/geolite2
-2. Place `.mmdb` files in the same directory as `index.php`
-3. Adjust file paths/names in `mmdb_config.php` if needed
-4. Create the folder "blocklist_csvs/" and make sure is writable by the web server user
+### 1. Download and Configure MMDB Databases
+
+**Download MMDB database files** (not all are necessary; the app will ignore missing DBs):
+- **iplocate.io**: https://iplocate.io/ (Community/Premium, mmdb files available via github)
+- **ipinfo Lite**: https://ipinfo.io/ (Requires registration)
+- **MaxMind GeoLite2**: https://www.maxmind.com/en/products/geoip2/geolite2 (Commercial)
+
+Place `.mmdb` files in the same directory as `index.php`.
+
+### 2. Configure Paths and Services
+
+Edit `config.php` to:
+- Set database `'enabled'` flags (default: all enabled)
+- Adjust blocklist CSV directory path (`blocklist_csvs_dir`)
+- Specify correct MMDB file names if different from defaults
+
+```php
+'blocklist_csvs_dir' => __DIR__ . '/blocklist_csvs',
+'databases' => [
+    [
+        'id'      => 'maxmind',
+        'enabled' => true,   // Set to false to disable this service
+        'databases' => [...]
+    ],
+    // ...
+]
+```
+
+### 3. Create Blocklist Directory
+
+Ensure the blocklist directory exists and is writable by the web server user:
+
+```bash
+mkdir -p blocklist_csvs
+chmod 755 blocklist_csvs
+```
+
+For production deployments, see [blocklist_scripts/README.md](blocklist_scripts/README.md) for security recommendations.
 
 ## Usage
 
-1. Paste "Fail2Ban hosts found:" section from the Logwatch report in the input field
-2. Select a result set by checking one checkbox per row
-3. Click "Export to blocklist CSVs"
-4. CSV files are saved to `blocklist_csvs/{CC}_v4.csv` and `blocklist_csvs/{CC}_v6.csv`
-5. After a change to a blocklist run "sudo update_iptables.sh" to update the iptables rules
-   (Adds and removes new and removed entries)
+### Web Interface
+
+1. Paste a "Fail2Ban hosts found:" section from Logwatch reports (or similar log data with IPs)
+   - Supports formats with service/jail headers: `apache-d2s:`, `Logout/aborts:`, etc.
+   - Automatically detects and tags IPs with their source service
+2. View lookup results across enabled GeoIP databases
+3. Select networks to block by checking checkboxes (one per row)
+4. Click "Create/Update blocklist CSV" to save selections
+5. CSV files are saved to configured blocklist directory as `{CC}_v4.csv` and `{CC}_v6.csv`
+
+### Command-Line Tools
+
+After updating blocklists, run scripts from `blocklist_scripts/` to apply rules:
+
+```bash
+cd blocklist_scripts/
+
+# Get networks from CSVs (generates JSON output)
+python3 get_networks_from_CSVs.py ../blocklist_csvs
+
+# Update iptables rules (requires sudo)
+sudo bash update_iptables.sh ../blocklist_csvs
+
+# Count current rules
+bash ipv4_count_rules.sh
+bash ipv6_count_rules.sh
+```
+
+See [blocklist_scripts/README.md](blocklist_scripts/README.md) for detailed script documentation.
 
 ## CSV Format
 

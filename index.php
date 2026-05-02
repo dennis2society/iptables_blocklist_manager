@@ -285,10 +285,15 @@ function cidrToRange(string $cidr): array {
 
 function loadBlocklistIndex(string $csvDir): array {
     // Returns: [ cidr => [ source => true, ... ], ... ]
+    // Only indexes CIDRs from country blocklists, not ASN blocklists (AS*_*.csv files)
     // 'source' is the service id (e.g. 'maxmind', 'iplocate', 'ipinfo').
     // Files without a source column are stored under the '*' wildcard key.
     $index = [];
     foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
+        // Skip ASN-based blocklist files (e.g., AS8075_*.csv)
+        $basename = basename($file);
+        if (preg_match('/^AS\d+_/', $basename)) continue;
+        
         $fh = fopen($file, 'r');
         if (!$fh) continue;
         $header = fgetcsv($fh);

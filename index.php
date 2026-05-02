@@ -121,6 +121,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) 
         if (!preg_match('#^[0-9a-fA-F:.]+/\d{1,3}$#', $cidrToRemove)) continue;
 
         foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
+            // Skip ASN-based blocklist files (e.g., AS8075_*.csv)
+            $basename = basename($file);
+            if (preg_match('/^AS\d+_/', $basename)) continue;
+            
             $fh = fopen($file, 'r');
             if (!$fh) continue;
             $header = fgetcsv($fh);

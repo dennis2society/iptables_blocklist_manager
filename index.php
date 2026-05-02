@@ -604,12 +604,12 @@ if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
                     $cc   = $s['country_code'] ? ' [' . h($s['country_code']) . ']' : '';
                     $disp = $flag ? $flag . '&nbsp;' . h($s['country']) . $cc : h($s['country']) . $cc;
                     $sep  = $i > 0 ? ' src-sep' : '';
+                    $asnBlocked = is_dir($BLOCKLIST_CSVS_DIR) && isAsnBlocked($s['asn'], $BLOCKLIST_CSVS_DIR);
                     $alreadyBlocked = !$rowChecked && $s['cidr'] !== '' && (
                         isset($blocklistIndex[$s['cidr']][$service['id']]) ||
                         isset($blocklistIndex[$s['cidr']]['*'])
                     );
                     if ($alreadyBlocked) $rowChecked = true;
-                    $asnBlocked = is_dir($BLOCKLIST_CSVS_DIR) && isAsnBlocked($s['asn'], $BLOCKLIST_CSVS_DIR);
                 ?>
                 <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"<?= $alreadyBlocked ? ' checked' : '' ?>><?= h($s['cidr']) ?></label><?php endif; ?></td>
                 <?php [$rStart, $rEnd] = cidrToRange($s['cidr']); ?>

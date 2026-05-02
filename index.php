@@ -308,6 +308,30 @@ function loadBlocklistIndex(string $csvDir): array {
     return $index;
 }
 
+function loadBlocklistAsnIndex(string $csvDir): array {
+    // Returns: [ asn => [ source => true, ... ], ... ]
+    // Builds an index of blocked ASNs from blocklist CSV files
+    $index = [];
+    foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
+        $fh = fopen($file, 'r');
+        if (!$fh) continue;
+        $header = fgetcsv($fh);
+        if (!$header) { fclose($fh); continue; }
+        $asnCol    = array_search('asn', $header, true);
+        $sourceCol = array_search('source',  $header, true);
+        if ($asnCol === false) { fclose($fh); continue; }
+        while (($row = fgetcsv($fh)) !== false) {
+            $asn = trim($row[$asnCol] ?? '');
+            if ($asn === '') continue;
+            $src = ($sourceCol !== false) ? trim($row[$sourceCol] ?? '') : '';
+            $key = ($src !== '') ? $src : '*';
+            $index[$asn][$key] = true;
+        }
+        fclose($fh);
+    }
+    return $index;
+}
+
 // ─── Database lookups ─────────────────────────────────────────────────────────
 
 function getAvailableSources(string $dataDir, array $mmdbConfig, array $sessionServiceEnabled = []): array {
@@ -457,8 +481,10 @@ if ($isPost) {
 }
 // Build blocklist index whenever there are IPs to display
 $blocklistIndex = [];
+$blocklistAsnIndex = [];
 if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
     $blocklistIndex = loadBlocklistIndex($BLOCKLIST_CSVS_DIR);
+    $blocklistAsnIndex = loadBlocklistAsnIndex($BLOCKLIST_CSVS_DIR);
 }
 ?>
 <!DOCTYPE html>
@@ -599,12 +625,16 @@ if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
                         isset($blocklistIndex[$s['cidr']]['*'])
                     );
                     if ($alreadyBlocked) $rowChecked = true;
+                    $asnBlocked = $s['asn'] !== '' && (
+                        isset($blocklistAsnIndex[$s['asn']][$service['id']]) ||
+                        isset($blocklistAsnIndex[$s['asn']]['*'])
+                    );
                 ?>
                 <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"<?= $alreadyBlocked ? ' checked' : '' ?>><?= h($s['cidr']) ?></label><?php endif; ?></td>
                 <?php [$rStart, $rEnd] = cidrToRange($s['cidr']); ?>
                 <td class="range-col"><?php if ($rStart !== ''): ?><code><?= h($rStart) ?></code><br><code><?= h($rEnd) ?></code><?php endif; ?></td>
                 <td><?= $disp ?></td>
-                <td class="asn"><?php if ($s['asn']): ?><a href="asn_view.php?asn=<?= h(urlencode($s['asn'])) ?>"><?= h($s['asn']) ?></a><?php else: ?><?= h($s['asn']) ?><?php endif; ?></td>
+                <td class="asn"><?php if ($s['asn']): ?><a href="asn_view.php?asn=<?= h(urlencode($s['asn'])) ?>"><?= h($s['asn']) ?></a><?php if ($asnBlocked): ?> <span class="asn-blocked-badge" title="This entire ASN is blocked in the blocklist">🔒 blocked</span><?php endif; ?><?php else: ?><?= h($s['asn']) ?><?php endif; ?></td>
                 <td class="org" title="<?= h($s['org']) ?>"><?= h($s['org']) ?></td>
                 <?php endforeach; ?>
             </tr>

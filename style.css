@@ -92,6 +92,12 @@ td.count-col {
 }
 td.cidr { color: #555; font-family: monospace; font-size: .74rem; white-space: nowrap; }
 td.asn { color: #555; font-size: .75rem; }
+.asn-blocked-badge {
+    display: inline-block; margin-left: .3rem; padding: .15rem .5rem;
+    background: #fef3c7; color: #92400e; border-radius: 3px;
+    font-size: .7rem; font-weight: 600; white-space: nowrap;
+    border: 1px solid #fcd34d;
+}
 td.org { color: #333; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
 
 tbody tr:nth-child(even) td { background: #f7f9fd; }

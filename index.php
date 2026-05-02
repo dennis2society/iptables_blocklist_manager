@@ -308,29 +308,15 @@ function loadBlocklistIndex(string $csvDir): array {
     return $index;
 }
 
-function loadBlocklistAsnIndex(string $csvDir): array {
-    // Returns: [ asn => [ source => true, ... ], ... ]
-    // Builds an index of blocked ASNs from blocklist CSV files
-    $index = [];
-    foreach (glob($csvDir . '/*.csv') ?: [] as $file) {
-        $fh = fopen($file, 'r');
-        if (!$fh) continue;
-        $header = fgetcsv($fh);
-        if (!$header) { fclose($fh); continue; }
-        $asnCol    = array_search('asn', $header, true);
-        $sourceCol = array_search('source',  $header, true);
-        if ($asnCol === false) { fclose($fh); continue; }
-        while (($row = fgetcsv($fh)) !== false) {
-            $asn = trim($row[$asnCol] ?? '');
-            if ($asn === '') continue;
-            $src = ($sourceCol !== false) ? trim($row[$sourceCol] ?? '') : '';
-            $key = ($src !== '') ? $src : '*';
-            $index[$asn][$key] = true;
-        }
-        fclose($fh);
-    }
-    return $index;
+function isAsnBlocked(string $asn, string $csvDir): bool {
+    // Check if there's a blocklist file for this ASN (e.g., AS8075_*.csv)
+    // The glob will match any file starting with the ASN followed by an underscore
+    if (!$asn) return false;
+    $matches = glob($csvDir . '/' . preg_quote($asn, '/') . '_*.csv');
+    return !empty($matches);
 }
+
+
 
 // ─── Database lookups ─────────────────────────────────────────────────────────
 
@@ -481,10 +467,8 @@ if ($isPost) {
 }
 // Build blocklist index whenever there are IPs to display
 $blocklistIndex = [];
-$blocklistAsnIndex = [];
 if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
     $blocklistIndex = loadBlocklistIndex($BLOCKLIST_CSVS_DIR);
-    $blocklistAsnIndex = loadBlocklistAsnIndex($BLOCKLIST_CSVS_DIR);
 }
 ?>
 <!DOCTYPE html>
@@ -625,10 +609,7 @@ if (!empty($ips) && is_dir($BLOCKLIST_CSVS_DIR)) {
                         isset($blocklistIndex[$s['cidr']]['*'])
                     );
                     if ($alreadyBlocked) $rowChecked = true;
-                    $asnBlocked = $s['asn'] !== '' && (
-                        isset($blocklistAsnIndex[$s['asn']][$service['id']]) ||
-                        isset($blocklistAsnIndex[$s['asn']]['*'])
-                    );
+                    $asnBlocked = is_dir($BLOCKLIST_CSVS_DIR) && isAsnBlocked($s['asn'], $BLOCKLIST_CSVS_DIR);
                 ?>
                 <td class="cidr<?= $sep ?>" title="<?= h($s['cidr']) ?>"><?php if ($s['cidr']): ?><label class="cidr-label"><input type="checkbox" class="net-cb" data-src="<?= h($service['id']) ?>"<?= $alreadyBlocked ? ' checked' : '' ?>><?= h($s['cidr']) ?></label><?php endif; ?></td>
                 <?php [$rStart, $rEnd] = cidrToRange($s['cidr']); ?>

@@ -167,6 +167,35 @@ table.show-ranges .range-col { display: table-cell; }
 }
 .btn-green:hover:not(:disabled) { background: #047857; }
 .btn-green:disabled { opacity: .5; cursor: not-allowed; }
+.btn-warning {
+    padding: .4rem 1rem; background: #d97706; color: #fff;
+    border: none; border-radius: 6px; font-size: .88rem; cursor: pointer;
+}
+.btn-warning:hover:not(:disabled) { background: #b45309; }
+.asn-status-badge {
+    display: inline-block; padding: .25rem .7rem;
+    border-radius: 999px; font-size: .82rem; font-weight: 600;
+}
+.status-blocked { background: #fee2e2; color: #7f1d1d; }
+.status-allowed { background: #d1fae5; color: #065f46; }
+
+.btn-warning {
+    padding: .4rem 1rem; background: #d97706; color: #fff;
+    border: none; border-radius: 6px; font-size: .88rem; cursor: pointer;
+}
+.btn-warning:hover:not(:disabled) { background: #b45309; }
+.btn-warning:disabled { opacity: .5; cursor: not-allowed; }
+
+.asn-status-badge {
+    display: inline-block; padding: .4rem .8rem; border-radius: 6px;
+    font-size: .88rem; font-weight: 600;
+}
+.asn-status-badge.status-blocked {
+    background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5;
+}
+.asn-status-badge.status-allowed {
+    background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7;
+}
 
 .progress-wrap { margin-bottom: 1.2rem; }
 .progress-bar-outer {

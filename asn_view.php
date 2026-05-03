@@ -35,6 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_cache'])) {
     exit;
 }
 
+// ─── Unblock ASN action (remove from blocklist_csvs) ────────────────────────
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unblock_asn'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        die('CSRF token validation failed');
+    }
+    $asn = strtoupper(preg_replace('/[^A-Z0-9]/', '', $_POST['unblock_asn']));
+    if (preg_match('/^AS\d+$/', $asn)) {
+        foreach (glob(__DIR__ . '/blocklist_csvs/' . $asn . '_*.csv') ?: [] as $f) {
+            if (file_exists($f)) unlink($f);
+        }
+    }
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?asn=' . urlencode($asn));
+    exit;
+}
+
 // ─── Blocklist CSV export ─────────────────────────────────────────────────────
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_blocklist'])) {
@@ -113,6 +130,9 @@ $csvFiles   = $hasAsn ? (glob(__DIR__ . '/asn_cache/' . $rawAsn . '_*.csv') ?: [
 $hasCached  = !empty($csvFiles);
 $cachedTime = $hasCached ? filemtime($csvFiles[0]) : null;
 
+$blocklistFiles = $hasAsn ? (glob(__DIR__ . '/blocklist_csvs/' . $rawAsn . '_*.csv') ?: []) : [];
+$isBlocked = !empty($blocklistFiles);
+
 // ─── Load networks from CSV cache ────────────────────────────────────────────
 
 $networks = [];
@@ -181,7 +201,20 @@ foreach ($csvFiles as $csvFile) {
             Clear cache<?= $hasCached ? ' (' . date('Y-m-d H:i', $cachedTime) . ')' : '' ?>
         </button>
     </form>
-    <button id="export-btn" class="btn-green" disabled>Export blocklist CSVs (overwrites existing)</button>
+    <span class="asn-status-badge <?= $isBlocked ? 'status-blocked' : 'status-allowed' ?>">
+        <?= $isBlocked ? '🔴 Blocked' : '🟢 Allowed' ?>
+    </span>
+    <?php if ($isBlocked): ?>
+    <form method="post" style="display:inline">
+        <input type="hidden" name="csrf_token" value="<?= h($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="unblock_asn" value="<?= h($rawAsn) ?>">
+        <button type="submit" class="btn-warning"
+                onclick="return confirm('Remove <?= h($rawAsn) ?> from blocklists?')">
+            🔓 Unblock
+        </button>
+    </form>
+    <?php endif; ?>
+    <button id="export-btn" class="btn-green" disabled>Export/update blocklist CSVs (overwrites existing)</button>
     <span id="export-msg" class="export-msg"></span>
 </div>
 

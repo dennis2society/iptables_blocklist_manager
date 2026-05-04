@@ -4,6 +4,7 @@ sudo iptables -S | awk '
     END {
         total = 0
         for (c in count) { print c, count[c]; total += count[c] }
-        print "\nTOTAL", total
+        if (total > 0) { print ""; print "TOTAL", total }
+        else print "No blocklists found"
     }
 '

@@ -41,7 +41,9 @@ def get_networks() -> dict[str, dict]:
                             entry[col] = str(val)
             result[stem] = entry
         except Exception as exc:
+            import traceback
             print(f"ERROR reading {filepath}: {exc}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
 
     return result
 

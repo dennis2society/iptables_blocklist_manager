@@ -31,7 +31,8 @@ SET_PREFIX="bl_"
 VENV_DIR="/home/wakko/venv"
 # Path to the directory containing CSV blocklists.
 #CSV_DIR="$SCRIPT_DIR/blocklist_csvs"
-CSV_DIR="/home/wakko/htdocs/logwatch_tables/blocklist_csvs"
+#CSV_DIR="/home/wakko/htdocs/logwatch_tables/blocklist_csvs"
+CSV_DIR="/var/www/html/ip-lookup/logwatch_tables/blocklist_csvs"
 
 # DRY_RUN is set to true by --dry-run and checked throughout; declare it here
 # so it is always defined even if main() is somehow not the entry point.
@@ -293,10 +294,15 @@ main() {
     mapfile -t STEMS < <(echo "$NETWORKS_JSON" | jq -r 'keys[]')
 
     # Build a flat list of expected set names for stale-set detection.
+    # We scan the CSV directory on disk rather than relying on the Python JSON
+    # keys so that a CSV which fails to parse never causes its existing ipset
+    # to be falsely treated as stale and needlessly destroyed and re-created.
     expected_sets=()
-    for stem in "${STEMS[@]:-}"; do
-        [[ -z "$stem" ]] && continue
-        expected_sets+=("$(make_set_name "$stem")")
+    for _csv in "$CSV_DIR"/*.csv; do
+        [[ -f "$_csv" ]] || continue
+        _stem="$(basename "${_csv%.csv}")"
+        [[ -z "$_stem" ]] && continue
+        expected_sets+=("$(make_set_name "$_stem")")
     done
 
     # Helper: returns 0 if $1 appears in the array passed as subsequent args.

@@ -283,15 +283,17 @@ main() {
         log "===== Starting blocklist update (ipset) ====="
     fi
 
-    # Run Python script via the venv; stderr goes straight to the log file.
+    # Run Python script via the venv; stderr goes to the log file and
+    # (for visibility) the terminal so parse errors are not silently buried.
     log "Running get_networks_from_CSVs.py from: $CSV_DIR"
-    NETWORKS_JSON=$("$VENV_DIR/bin/python3" "$PYTHON_SCRIPT" "$CSV_DIR" 2>>"$LOG_FILE") || {
+    NETWORKS_JSON=$("$VENV_DIR/bin/python3" "$PYTHON_SCRIPT" "$CSV_DIR" 2> >(tee -a "$LOG_FILE" >&2)) || {
         log_error "Python script failed. Aborting."
         exit 1
     }
 
     # Collect all stems present in the JSON output.
     mapfile -t STEMS < <(echo "$NETWORKS_JSON" | jq -r 'keys[]')
+    log "DEBUG: Python returned ${#STEMS[@]} stems; CSV dir has $(find "$CSV_DIR" -maxdepth 1 -name '*.csv' | wc -l) CSV files; expected_sets will have ${#expected_sets[@]} entries (populated below)"
 
     # Build a flat list of expected set names for stale-set detection.
     # We scan the CSV directory on disk rather than relying on the Python JSON
@@ -305,6 +307,8 @@ main() {
         expected_sets+=("$(make_set_name "$_stem")")
     done
 
+    log "DEBUG: expected_sets has ${#expected_sets[@]} entries; Python returned ${#STEMS[@]} stems"
+
     # Helper: returns 0 if $1 appears in the array passed as subsequent args.
     _in_array() { local needle="$1"; shift; printf '%s\n' "$@" | grep -qxF "$needle"; }
 
@@ -317,6 +321,9 @@ main() {
         # Skip any leftover temp sets; they are cleaned up by atomic_update_set.
         [[ "$setname" == *_tmp ]] && continue
         if ! _in_array "$setname" "${expected_sets[@]:-}"; then
+            # Check if the backing CSV exists despite not being in expected_sets.
+            _stale_csv="$CSV_DIR/${setname#${SET_PREFIX}}.csv"
+            [[ -f "$_stale_csv" ]] && log "DEBUG: $setname flagged stale but CSV exists: $_stale_csv"
             if [[ "$DRY_RUN" == true ]]; then
                 log "[DRY-RUN] Would remove stale set $setname (no corresponding CSV)"
             else

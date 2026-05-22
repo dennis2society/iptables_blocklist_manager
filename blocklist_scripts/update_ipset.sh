@@ -293,7 +293,7 @@ main() {
 
     # Collect all stems present in the JSON output.
     mapfile -t STEMS < <(echo "$NETWORKS_JSON" | jq -r 'keys[]')
-    log "DEBUG: Python returned ${#STEMS[@]} stems; CSV dir has $(find "$CSV_DIR" -maxdepth 1 -name '*.csv' | wc -l) CSV files; expected_sets will have ${#expected_sets[@]} entries (populated below)"
+    log "DEBUG: Python returned ${#STEMS[@]} stems; CSV dir has $(find "$CSV_DIR" -maxdepth 1 -name '*.csv' | wc -l) CSV files"
 
     # Build a flat list of expected set names for stale-set detection.
     # We scan the CSV directory on disk rather than relying on the Python JSON

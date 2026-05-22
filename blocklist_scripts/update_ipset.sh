@@ -31,8 +31,8 @@ SET_PREFIX="bl_"
 VENV_DIR="/home/wakko/venv"
 # Path to the directory containing CSV blocklists.
 #CSV_DIR="$SCRIPT_DIR/blocklist_csvs"
-#CSV_DIR="/home/wakko/htdocs/logwatch_tables/blocklist_csvs"
-CSV_DIR="/var/www/html/ip-lookup/logwatch_tables/blocklist_csvs"
+CSV_DIR="/home/wakko/htdocs/logwatch_tables/blocklist_csvs"
+#CSV_DIR="/var/www/html/ip-lookup/logwatch_tables/blocklist_csvs"
 
 # DRY_RUN is set to true by --dry-run and checked throughout; declare it here
 # so it is always defined even if main() is somehow not the entry point.
@@ -299,18 +299,15 @@ main() {
     # We scan the CSV directory on disk rather than relying on the Python JSON
     # keys so that a CSV which fails to parse never causes its existing ipset
     # to be falsely treated as stale and needlessly destroyed and re-created.
-    expected_sets=()
+    declare -A expected_sets
     for _csv in "$CSV_DIR"/*.csv; do
         [[ -f "$_csv" ]] || continue
         _stem="$(basename "${_csv%.csv}")"
         [[ -z "$_stem" ]] && continue
-        expected_sets+=("$(make_set_name "$_stem")")
+        expected_sets["$(make_set_name "$_stem")"]=1
     done
 
     log "DEBUG: expected_sets has ${#expected_sets[@]} entries; Python returned ${#STEMS[@]} stems"
-
-    # Helper: returns 0 if $1 appears in the array passed as subsequent args.
-    _in_array() { local needle="$1"; shift; printf '%s\n' "$@" | grep -qxF "$needle"; }
 
     # -----------------------------------------------------------------------
     # Remove (or report) sets whose CSV files have been deleted.
@@ -320,7 +317,7 @@ main() {
         [[ -z "$setname" ]] && continue
         # Skip any leftover temp sets; they are cleaned up by atomic_update_set.
         [[ "$setname" == *_tmp ]] && continue
-        if ! _in_array "$setname" "${expected_sets[@]:-}"; then
+        if [[ -z "${expected_sets[$setname]+x}" ]]; then
             # Check if the backing CSV exists despite not being in expected_sets.
             _stale_csv="$CSV_DIR/${setname#${SET_PREFIX}}.csv"
             [[ -f "$_stale_csv" ]] && log "DEBUG: $setname flagged stale but CSV exists: $_stale_csv"

@@ -3,3 +3,4 @@ blocklist_csvs/
 *~
 phpinfo.php
 asn_cache/*.csv
+.htaccess

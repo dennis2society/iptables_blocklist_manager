@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import csv
 import ipaddress
 import multiprocessing
@@ -86,6 +87,10 @@ def _worker_init(data_dir_str: str, country_cfg: list[dict]) -> None:
                 ))
             except Exception:
                 pass
+    # Ensure file handles are released when the worker exits normally or is
+    # replaced (maxtasksperchild). This fixes the pool.join() hang that was
+    # previously seen with the forkserver start method.
+    atexit.register(_worker_cleanup)
 
 
 def _worker_cleanup() -> None:
@@ -140,8 +145,11 @@ def _include(net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> bool:
 def _dedup_family(nets: list[tuple]) -> list[tuple]:
     """
     Within a single address family (all IPv4 or all IPv6):
-    sort by prefix length ascending (larger/broader first), then accept each
-    network only if it is not already covered by an accepted supernet.
+    sort by prefix length ascending (broader first), then accept each network
+    only if none of its supernets are already in the accepted set.
+
+    O(n * max_prefix_len) via hash-set supernet lookups — replaces the
+    previous O(n²) subnet_of list scan that froze on large ASNs.
     Input/output: [(cidr_str, source, ip_version), ...]
     """
     parsed: list[tuple] = []
@@ -153,12 +161,17 @@ def _dedup_family(nets: list[tuple]) -> list[tuple]:
 
     parsed.sort(key=lambda x: x[0].prefixlen)
 
-    accepted: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    accepted_set: set[str] = set()
     result: list[tuple] = []
 
     for net_obj, src, ver, cidr in parsed:
-        if not any(net_obj.subnet_of(a) for a in accepted):
-            accepted.append(net_obj)
+        # At most prefixlen-1 hash lookups (≤23 for IPv4, ≤47 for IPv6)
+        # instead of scanning a growing list of network objects.
+        if not any(
+            str(net_obj.supernet(new_prefix=p)) in accepted_set
+            for p in range(1, net_obj.prefixlen)
+        ):
+            accepted_set.add(cidr)
             result.append((cidr, src, ver))
 
     return result
@@ -471,9 +484,10 @@ def main() -> None:
     empty    = 0
     errors   = 0
 
-    # Use an explicit fork context — Python 3.14+ changed the default on Linux
-    # to 'forkserver', which causes pool shutdown to hang with open file handles.
-    ctx  = multiprocessing.get_context("fork")
+    # spawn: each worker is a fresh Python interpreter, so it never inherits
+    # the parent's asn_data memory (no CoW blowup). Simpler and more reliable
+    # than forkserver; no maxtasksperchild needed since workers start lean.
+    ctx  = multiprocessing.get_context("spawn")
     pool = ctx.Pool(
         processes=args.workers,
         initializer=_worker_init,
@@ -486,7 +500,7 @@ def main() -> None:
         position=0,
     )
     try:
-        for result in pool.imap_unordered(_process_one, worker_args, chunksize=20):
+        for result in pool.imap_unordered(_process_one, worker_args, chunksize=4):
             bar.update(1)
             status = result.get("status")
 
@@ -504,13 +518,14 @@ def main() -> None:
             elif status == "error":
                 errors += 1
                 tqdm.write(f"  ✗ {result['asn']}: {result.get('error', '?')}")
-        
-        # Close pool after successful completion of all tasks
-        pool.close()
     except (KeyboardInterrupt, Exception) as e:
-        # On error/interrupt, terminate workers immediately
         pool.terminate()
+        pool.join()
         raise
+    else:
+        # All results consumed — terminate is safe and avoids a hang waiting
+        # for idle spawn workers (holding MMDB file handles) to exit cleanly.
+        pool.terminate()
     finally:
         bar.close()
         pool.join()

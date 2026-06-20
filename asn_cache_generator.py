@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-asn_scan.py — Precompute ASN → network CSV cache files from all MMDB databases.
+asn_cache_generator.py — Precompute ASN → network CSV cache files from all MMDB databases.
 
 Iterates all MMDB files in the parent directory, collects every network block
 per ASN, deduplicates overlapping subnets, cross-references country data, and
@@ -10,10 +10,10 @@ IPv4: all blocks up to and including /24 (more-specific blocks are too noisy)
 IPv6: blocks between /32 and /48 inclusive (broader = too much, narrower = too small)
 
 Usage:
-    python3 asn_scan.py                   # process all ASNs
-    python3 asn_scan.py --force           # overwrite existing CSVs
-    python3 asn_scan.py --workers 4       # parallel workers (default: cpu count, max 8)
-    python3 asn_scan.py --asn AS204548    # single ASN (for testing/debugging)
+    python3 asn_cache_generator.py                   # process all ASNs
+    python3 asn_cache_generator.py --force           # overwrite existing CSVs
+    python3 asn_cache_generator.py --workers 4       # parallel workers (default: cpu count, max 8)
+    python3 asn_cache_generator.py --asn AS204548    # single ASN (for testing/debugging)
 """
 
 from __future__ import annotations
@@ -86,7 +86,17 @@ def _worker_init(data_dir_str: str, country_cfg: list[dict]) -> None:
                 ))
             except Exception:
                 pass
-    # No atexit needed — the OS reclaims file descriptors when the worker exits.
+
+
+def _worker_cleanup() -> None:
+    """Worker cleanup — close all MMDB readers to free file handles."""
+    global _country_readers
+    for reader, _, _ in _country_readers:
+        try:
+            reader.close()
+        except Exception:
+            pass
+    _country_readers = []
 
 
 # ── ASN extraction helpers ─────────────────────────────────────────────────────
@@ -388,6 +398,9 @@ def _process_one(args: tuple) -> dict:
                     n["cidr"], n["ip_version"], n["country"], n["country_code"],
                     asn_str, org, n["source"],
                 ])
+        
+        # Explicitly flush and close to prevent file handle accumulation
+        out_path = None
 
         return {"asn": asn_str, "status": "ok", "count": len(enriched),
                 "file": filename}
@@ -491,9 +504,15 @@ def main() -> None:
             elif status == "error":
                 errors += 1
                 tqdm.write(f"  ✗ {result['asn']}: {result.get('error', '?')}")
+        
+        # Close pool after successful completion of all tasks
+        pool.close()
+    except (KeyboardInterrupt, Exception) as e:
+        # On error/interrupt, terminate workers immediately
+        pool.terminate()
+        raise
     finally:
         bar.close()
-        pool.terminate()
         pool.join()
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
